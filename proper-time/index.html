@@ -1,0 +1,1173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Proper Time</title>
+<meta name="description" content="A relativistic spaceflight game: fly at 0.9999c from the cockpit and watch real Doppler shifts, aberration, beaming and time dilation.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Same console look as the causal-games and quantum-games prototypes. Deliberately a single dark theme: it is a cockpit.
+   Blue is the ship and anything moving toward you, red is anything moving away, amber is a warning. */
+:root{
+  --void:#05060d; --panel:#0d1124; --grid:#1b2145; --wall:#2a3166;
+  --ink:#e8eaf7; --muted:#8a90b8;
+  --blue:#5fb4ff; --red:#ff5d4f; --amber:#f5b14c; --ok:#8ef0b0;
+  --display:'Michroma','Eurostile','Bank Gothic',system-ui,sans-serif;
+  --body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--void);color:var(--ink);margin:0;height:100%;overflow:hidden}
+body{font-family:var(--body);font-size:15px;line-height:1.5}
+[hidden]{display:none!important}
+a{color:var(--blue)}
+button{font-family:var(--mono);font-size:12.5px;background:transparent;color:var(--ink);border:1px solid var(--wall);border-radius:4px;padding:7px 11px;cursor:pointer;letter-spacing:.02em}
+button:hover{border-color:var(--blue)}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button.primary{background:var(--blue);color:var(--void);border-color:var(--blue);font-weight:500}
+kbd{font-family:var(--mono);font-size:11.5px;color:var(--ink);border:1px solid var(--wall);border-bottom-width:2px;border-radius:3px;padding:1px 5px;white-space:nowrap}
+#gl,#hud{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{pointer-events:none}
+#gl{cursor:crosshair}
+body.locked #gl{cursor:none}
+
+/* ---------- Overlays (title, brief, pause, debrief) ---------- */
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:24px max(16px,env(safe-area-inset-left,0px));box-sizing:border-box;overflow:auto;z-index:5}
+.overlay.dim{background:color-mix(in srgb,var(--void) 55%,transparent)}
+.tcard{position:relative;max-width:600px;width:100%;display:grid;gap:22px;text-align:center}
+.tname{font-family:var(--display);font-weight:400;font-size:clamp(34px,8vw,68px);letter-spacing:.14em;margin:0;text-shadow:0 0 28px color-mix(in srgb,var(--blue) 50%,transparent)}
+.ttag{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.06em;margin:-8px 0 0}
+.tmenu{display:grid;gap:10px;justify-self:center;width:min(260px,100%)}
+.tmenu button{font-size:14px;padding:11px 14px;letter-spacing:.12em;text-transform:uppercase;background:color-mix(in srgb,var(--void) 70%,transparent)}
+.tmenu button.primary{background:var(--blue)}
+.tpanel{text-align:left;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--grid);border-radius:6px;padding:18px 20px;display:grid;gap:12px;max-height:min(72vh,680px);overflow:auto}
+.tpanel h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.08em;margin:0}
+.tpanel h3{font-size:14px;margin:6px 0 0;color:var(--blue);font-weight:600}
+.tpanel p{margin:0;opacity:.92;font-size:14px}
+.tpanel ul{margin:0;padding-left:18px;font-size:14px;display:grid;gap:4px}
+.tfoot{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.missions{display:grid;gap:10px}
+.mission{display:grid;grid-template-columns:1fr auto;gap:2px 12px;text-align:left;padding:12px 14px;background:color-mix(in srgb,var(--void) 60%,transparent)}
+.mission b{font-family:var(--display);font-weight:400;font-size:13px;letter-spacing:.08em}
+.mission span{grid-column:1;color:var(--muted);font-family:var(--body);font-size:13px}
+.mission i{grid-row:1/3;grid-column:2;align-self:center;font-style:normal;color:var(--amber);letter-spacing:.1em}
+.card{max-width:620px;width:100%;text-align:left}
+.stats{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-family:var(--mono);font-size:13px}
+.stats dt{color:var(--muted)}
+.stats dd{margin:0}
+.big{font-family:var(--display);font-size:22px;letter-spacing:.08em;margin:0}
+.won{color:var(--ok)} .lost{color:var(--red)}
+.rating{color:var(--amber);font-size:20px;letter-spacing:.2em}
+.phys{border-left:2px solid var(--blue);padding-left:12px}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+
+<div id="title" class="overlay">
+  <div class="tcard">
+    <h1 class="tname">PROPER&nbsp;TIME</h1>
+    <p class="ttag">fly at 0.9999c · watch the universe age</p>
+    <div class="tmenu" id="tmenu">
+      <button class="primary" data-go="missions">New Game</button>
+      <button data-go="info">Info</button>
+      <button data-go="controls">Controls</button>
+    </div>
+    <div class="tpanel" id="pMissions" hidden>
+      <h2>Missions</h2>
+      <div class="missions" id="missionList"></div>
+      <div class="row"><button data-go="menu">Back</button></div>
+    </div>
+    <div class="tpanel" id="pInfo" hidden>
+      <h2>The physics</h2>
+      <p>You fly a relativistic courier with a perfect antimatter drive. Everything you see from the cockpit is computed from special relativity, frame by frame.</p>
+      <h3>Exact</h3>
+      <ul>
+        <li><b>Rapidity.</b> Thrust adds rapidity φ, not speed. Speed is β = tanh φ, so it creeps toward c and never gets there. γ = cosh φ.</li>
+        <li><b>Time dilation.</b> Your clock is the real one you feel (1 s of play = 1 s of ship time). The universe's clock runs γ times faster.</li>
+        <li><b>Length contraction.</b> Distances along your motion shrink by γ in your frame. That is why a 2,400 light-second trip can take you 20 seconds.</li>
+        <li><b>Aberration.</b> Light reaching you is tilted toward your direction of travel: tan(θ′/2) = e<sup>−φ</sup> tan(θ/2). The sky crowds into a bright ring ahead (the "starbow"), and things you have passed can still appear ahead of you.</li>
+        <li><b>Doppler shift.</b> Light from direction θ is shifted by D = γ(1 + β cos θ). Stars are blackbodies, and a blackbody at temperature T looks like one at D·T, so colours are computed from the real Planck spectrum and the CIE 1931 colour-matching functions.</li>
+        <li><b>Beaming.</b> A point source gets D² brighter and sky surface brightness D⁴. At γ ≈ 600 the 2.7 K cosmic microwave background is blueshifted into visible light.</li>
+        <li><b>Light delay.</b> Blinking beacons and spinning planets are shown as they were when their light left them, so approaching clocks run fast and receding ones slow.</li>
+        <li><b>Rocket equation.</b> A photon rocket gains rapidity Δφ = ln(m₀/m₁). Each extra "nine" of c costs the same 1.15 of rapidity.</li>
+      </ul>
+      <h3>Tuned so it plays (sci-fi)</h3>
+      <ul>
+        <li><b>Space is compressed.</b> Stars are light-seconds apart, not light-years, so trips take seconds instead of years. Relativity is the same at any scale.</li>
+        <li><b>Inertial dampers.</b> Full thrust is about 30 million g. Your crew is fine. Don't ask.</li>
+        <li><b>A perfect drive.</b> Antimatter converts all its mass to thrust.</li>
+        <li><b>Brightness is compressed.</b> Nearby stars and planets are drawn about 10¹⁰ times dimmer than reality so you can see them next to the starfield, and your eyes auto-adjust exposure (lock it with <kbd>X</kbd> to see the raw change). Colour shifts and brightness <i>changes</i> stay exact.</li>
+        <li><b>Small things:</b> planet surface colours are tinted after the Doppler shift instead of being simulated by wavelength, and the ship's axes ignore Thomas precession.</li>
+      </ul>
+      <p class="tfoot">Press <kbd>V</kbd> in flight to switch to a Newtonian view: what an observer would see with no relativity. That is never what you'd actually see.</p>
+      <div class="row"><button data-go="menu">Back</button></div>
+    </div>
+    <div class="tpanel" id="pControls" hidden>
+      <h2>Controls</h2>
+      <p>Click the view to capture the mouse (or drag to look). Keyboard and mouse needed.</p>
+      <ul>
+        <li><kbd>Mouse</kbd> or <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> look and turn the ship. <kbd>Q</kbd><kbd>E</kbd> roll. <kbd>Wheel</kbd> zoom.</li>
+        <li><kbd>W</kbd> thrust where you are facing. Hold <kbd>Shift</kbd> for fine thrust.</li>
+        <li><kbd>S</kbd> brake against your motion, whichever way you face. Near your target the arrival computer throttles the burn so you stop at it.</li>
+        <li><kbd>Space</kbd> reverse thrust: full power backwards from where you are facing.</li>
+        <li><kbd>T</kbd> face the target. <kbd>F</kbd> face where you are going. <kbd>R</kbd> look behind. <kbd>Z</kbd> zoom in on the starbow (and back out).</li>
+        <li><kbd>V</kbd> relativistic or Newtonian view. <kbd>M</kbd> spacetime diagram. <kbd>X</kbd> lock exposure. <kbd>L</kbd> lock on to a beacon. <kbd>H</kbd> hide the HUD.</li>
+        <li><kbd>Esc</kbd> pause.</li>
+      </ul>
+      <div class="row"><button data-go="menu">Back</button></div>
+    </div>
+    <p class="tfoot">relativity-games · proper-time</p>
+  </div>
+</div>
+
+<div id="brief" class="overlay dim" hidden>
+  <div class="tpanel card">
+    <h2 id="briefName"></h2>
+    <p id="briefText"></p>
+    <dl class="stats" id="briefStats"></dl>
+    <div class="row"><button data-act="missions">Missions</button><button class="primary" data-act="launch">Launch</button></div>
+  </div>
+</div>
+
+<div id="pause" class="overlay dim" hidden>
+  <div class="tpanel card">
+    <h2>Paused</h2>
+    <div class="row"><button data-act="title">Title</button><button data-act="missions">Missions</button><button data-act="restart">Restart</button><button class="primary" data-act="resume">Resume</button></div>
+  </div>
+</div>
+
+<div id="debrief" class="overlay dim" hidden>
+  <div class="tpanel card">
+    <p class="big" id="dbHead"></p>
+    <p id="dbWhy"></p>
+    <div class="rating" id="dbRating"></div>
+    <dl class="stats" id="dbStats"></dl>
+    <div class="phys" id="dbPhys"></div>
+    <div class="row"><button data-act="missions">Missions</button><button data-act="restart">Retry</button><button class="primary" data-act="next" id="dbNext">Next mission</button></div>
+  </div>
+</div>
+
+<div id="nogl" class="overlay" hidden>
+  <div class="tpanel card"><h2>WebGL 2 needed</h2><p>This browser can't create a WebGL 2 context, so the cockpit view can't be drawn. Try a recent Chrome, Edge or Firefox on a desktop.</p></div>
+</div>
+
+<script id="engine">
+// Proper Time engine: relativistic kinematics, light from the sky, and missions. No DOM, so node tests can run it.
+// Units: lengths in light-seconds (ls), times in seconds, so c = 1. The ship's clock is proper time tau; the universe's is t.
+// The ship's state is its position and its proper velocity w = gamma*beta (unbounded, so speeds near c stay precise).
+(function(root){
+'use strict';
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const mul=(a,k)=>[a[0]*k,a[1]*k,a[2]*k],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const len=a=>Math.hypot(a[0],a[1],a[2]),norm=a=>{const l=len(a);return l?mul(a,1/l):[0,0,0];};
+const anyPerp=v=>norm(Math.abs(v[0])<0.9?cross(v,[1,0,0]):cross(v,[0,1,0]));
+
+const C2=1.4388e7;                  // hc/k in nm K
+const T_CMB=2.725,T_GAL=4500;       // the cosmic microwave background, and the mean colour temperature of the galaxy's light
+const THRUST=1,FINE=0.25;           // proper acceleration in rapidity per ship-second (1 = c per second, about 3e7 g)
+const MAX_PHI=10;                   // drive governor (gamma about 11,000)
+const DOCK_BETA=0.05,DOCK_R=4,SUB=1/240,HIST_DT=0.05;
+const LOG_VIS=-17.3;                // faintest point source you can see (a 6th magnitude star), log10 of solar-surface units
+const G_POLE=norm([0.32,0.9,0.28]),G_CENTER=norm(cross(G_POLE,[0.2,0,1])),G_X=cross(G_POLE,G_CENTER);
+
+// ---- Light: CIE 1931 colour matching (Wyman, Sloan and Shirley's multi-lobe fit) and the Planck spectrum ----
+function lobe(x,m,a,b){const t=(x-m)/(x<m?a:b);return Math.exp(-0.5*t*t);}
+function cmf(l){return [1.056*lobe(l,599.8,37.9,31.0)+0.362*lobe(l,442.0,16.0,26.7)-0.065*lobe(l,501.1,20.4,26.2),
+  0.821*lobe(l,568.8,46.9,40.5)+0.286*lobe(l,530.9,16.3,31.1),
+  1.217*lobe(l,437.0,11.8,36.0)+0.681*lobe(l,459.0,26.0,13.8)];}
+const toRGB=(X,Y,Z)=>[3.2406*X-1.5372*Y-0.4986*Z,-0.9689*X+1.8758*Y+0.0415*Z,0.0557*X-0.2040*Y+1.0570*Z];
+// Colours outside sRGB (pure spectral lines) get white added until they fit.
+function intoGamut(c){const m=Math.min(c[0],c[1],c[2]);return m<0?[c[0]-m,c[1]-m,c[2]-m]:c;}
+// Visible luminance (log10) and colour of a blackbody, worked in logs so a 3 K body doesn't underflow.
+function bbRaw(T){
+  const L=[];let m=-Infinity;
+  for(let l=360;l<=830;l+=2.5){const x=C2/(l*T),v=-5*Math.log(l)-x-Math.log(-Math.expm1(-x));L.push([l,v]);if(v>m)m=v;}
+  let X=0,Y=0,Z=0;
+  for(const [l,v] of L){const e=Math.exp(v-m),c=cmf(l);X+=e*c[0];Y+=e*c[1];Z+=e*c[2];}
+  const rgb=intoGamut(toRGB(X,Y,Z));
+  return {logY:m/Math.LN10+Math.log10(Y),rgb:rgb.map(c=>c/Y)};
+}
+// Table over log10 T, normalised so the Sun's surface (5800 K) has luminance 1. The shaders read the same table.
+const BB_MIN=0.5,BB_MAX=7,BB_N=1024,BB_STEP=(BB_MAX-BB_MIN)/(BB_N-1),BB=new Float32Array(BB_N*4);
+(function(){const ref=bbRaw(5800).logY;for(let i=0;i<BB_N;i++){const r=bbRaw(10**(BB_MIN+i*BB_STEP));BB.set([r.rgb[0],r.rgb[1],r.rgb[2],r.logY-ref],i*4);}})();
+// Above the table it is the Rayleigh-Jeans tail: same colour, luminance proportional to T.
+function bb(logT){
+  const f=(logT-BB_MIN)/BB_STEP;
+  if(f<0)return {rgb:[0,0,0],logY:-Infinity};
+  if(f>=BB_N-1){const j=(BB_N-1)*4;return {rgb:[BB[j],BB[j+1],BB[j+2]],logY:BB[j+3]+logT-BB_MAX};}
+  const i=Math.floor(f),t=f-i,a=i*4,b=a+4,q=k=>BB[a+k]+(BB[b+k]-BB[a+k])*t;
+  return {rgb:[q(0),q(1),q(2)],logY:q(3)};
+}
+// A single spectral line: luminance relative to the eye's peak (555 nm) and its display colour.
+const YMAX=cmf(555)[1];
+function line(lam){const c=cmf(lam);return {Y:Math.max(0,c[1])/YMAX,rgb:intoGamut(toRGB(c[0],c[1],c[2])).map(v=>v/YMAX)};}
+function band(lam){return lam<0.01?'gamma rays':lam<10?'X-rays':lam<380?'ultraviolet':lam<=780?'visible':lam<1e6?'infrared':'radio';}
+// Rest-frame brightness of the galaxy's diffuse light along direction n (the shader adds texture and dust on top).
+function galEps(n){
+  const b=Math.asin(Math.max(-1,Math.min(1,dot(n,G_POLE)))),c=dot(n,G_CENTER);
+  const bandL=Math.exp(-((b/0.16)**2)),bulge=Math.exp(-(((1-c)/0.25)**2))*Math.exp(-((b/0.3)**2));
+  return 1e-13*(1+6*bandL*(0.6+0.4*Math.max(0,c+0.2))+12*bulge);
+}
+
+// ---- Kinematics ----
+const gam=w=>Math.sqrt(1+dot(w,w));
+const rapidity=w=>Math.asinh(len(w));
+function betaOf(w){const l=len(w);return l/Math.sqrt(1+l*l);}
+// How many nines of c: -log10(1 - beta), computed from rapidity so it stays precise near c.
+function ninesOf(phi){return phi>15?(2*phi-Math.LN2)/Math.LN10:-Math.log10(2/(Math.exp(2*phi)+1));}
+// A 4-vector (t1, x1) in the ship's rest frame, seen from the universe frame (the ship moves at proper velocity w).
+function boostToWorld(w,t1,x1){const g=gam(w),wx=dot(w,x1);return {t:g*t1+wx,x:add(x1,mul(w,wx/(g+1)+t1))};}
+function boostToShip(w,t,x){return boostToWorld(mul(w,-1),t,x);}
+// Aberration and Doppler for an observer moving along unit vector v with rapidity phi.
+// n is the direction to a source in the universe frame; returns the direction you see it in, and the Doppler factor D
+// (received frequency / emitted). Half-angle form so it stays exact as beta -> 1: tan(th'/2) = e^-phi tan(th/2).
+function aberrate(n,v,phi){
+  const c=dot(n,v),perp=sub(n,mul(v,c)),sl=len(perp);
+  const h=Math.atan2(sl,c)/2,hp=Math.atan2(Math.exp(-phi)*Math.sin(h),Math.cos(h));
+  const e=sl>1e-12?mul(perp,1/sl):anyPerp(v);
+  return {n:add(mul(v,Math.cos(2*hp)),mul(e,Math.sin(2*hp))),D:Math.exp(phi)*Math.cos(h)**2+Math.exp(-phi)*Math.sin(h)**2};
+}
+// The inverse: from a direction you look in to where that light came from, and its Doppler factor.
+function deaberrate(np,v,phi){
+  const c=dot(np,v),perp=sub(np,mul(v,c)),sl=len(perp);
+  const hp=Math.atan2(sl,c)/2,h=Math.atan2(Math.exp(phi)*Math.sin(hp),Math.cos(hp));
+  const e=sl>1e-12?mul(perp,1/sl):anyPerp(v);
+  return {n:add(mul(v,Math.cos(2*h)),mul(e,Math.sin(2*h))),D:Math.exp(phi)*Math.cos(h)**2+Math.exp(-phi)*Math.sin(h)**2};
+}
+// How a static point P looks from the ship right now: apparent direction (ship frame), Doppler factor, true distance,
+// apparent distance (where the light's emission event sits in the ship frame, d*D), and when that light left it.
+// The Newtonian view has no aberration, no Doppler and instant light.
+function view(s,P,newton){
+  const r=sub(P,s.pos),d=Math.max(len(r),1e-9),n=mul(r,1/d),wl=len(s.w);
+  if(newton)return {n,D:1,d,dApp:d,tEmit:s.t};
+  if(wl<1e-12)return {n,D:1,d,dApp:d,tEmit:s.t-d};
+  const a=aberrate(n,mul(s.w,1/wl),Math.asinh(wl));
+  return {n:a.n,D:a.D,d,dApp:d*a.D,tEmit:s.t-d};
+}
+// Where a static point is in the ship's frame now (length-contracted along the motion).
+function shipFrame(s,P){const r=sub(P,s.pos),wl=len(s.w);if(wl<1e-12)return r;const v=mul(s.w,1/wl),a=dot(r,v);return add(sub(r,mul(v,a)),mul(v,a/gam(s.w)));}
+// World distance needed to stop from the current speed at proper acceleration a.
+function stopDist(s,a){return (gam(s.w)-1)/(a||THRUST);}
+
+// ---- Scenes ----
+const HOME=[
+  {kind:'planet',name:'Hearth',pos:[0.95,-0.55,1.5],R:0.3,light:'Sol',look:'bands',spin:0.05},
+  {kind:'star',name:'Sol',pos:[-14,5,-6],R:2.3,T:5700,spin:0.01},
+];
+const GATE={kind:'ring',name:'Halo Gate',pos:[0,0,-70],R:1.6,tube:0.07};
+const EMBER=[{kind:'star',name:'Ember',pos:[9,-5,-172],R:0.9,T:3300,spin:0.02},
+  {kind:'planet',name:'Rime',pos:[-2.5,1.4,-156],R:0.12,light:'Ember',look:'ice',spin:0.08}];
+const ECHO_DIR=norm([Math.sin(28*Math.PI/180)*Math.cos(Math.PI/6),Math.sin(28*Math.PI/180)*Math.sin(Math.PI/6),-Math.cos(28*Math.PI/180)]);
+const LEVELS=[
+  {id:'first-light',name:'First Light',axis:[0,0,-1],start:[0,0,0],fuel:10,life:null,par:[16,24],
+    beacons:[{id:'alpha',name:'Beacon Alpha',pos:[0,0,-150],lam:532,period:1,duty:0.3,logI:-9.3}],
+    bodies:[...HOME,GATE,...EMBER],
+    goals:[{type:'dock',target:'alpha',text:'Stop at Beacon Alpha'}],
+    milestones:[{id:'c9',text:'Bonus: reach 0.9c',speed:1,test:s=>ninesOf(rapidity(s.w))>=1},
+      {id:'c99',text:'Bonus: reach 0.99c',speed:2,test:s=>ninesOf(rapidity(s.w))>=2},
+      {id:'c999',text:'Bonus: reach 0.999c',speed:3,test:s=>ninesOf(rapidity(s.w))>=3}]},
+  {id:'twin-clocks',name:'Twin Clocks',axis:[0,0,-1],start:[0,0,0.3],fuel:25,life:70,par:[50,62],twin:true,
+    beacons:[{id:'home',name:'Hearth Station',pos:[0,0,0],lam:590,period:1.5,duty:0.5,logI:-8.5},
+      {id:'kepler',name:'Kepler Relay',pos:[0,0,-2400],lam:460,period:1,duty:0.4,logI:-7.6}],
+    bodies:[...HOME,{kind:'star',name:'Azure',pos:[55,20,-2445],R:6,T:15000,spin:0.004},
+      {kind:'planet',name:'Tethys',pos:[1.6,-0.9,-2402.4],R:0.25,light:'Azure',look:'rock',spin:0.06}],
+    goals:[{type:'dock',target:'kepler',text:'Deliver to Kepler Relay'},{type:'dock',target:'home',text:'Return to Hearth Station'}]},
+  {id:'invisible-light',name:'Invisible Light',axis:ECHO_DIR,start:[0,0,0],fuel:10,life:90,par:[45,65],
+    beacons:[{id:'buoy',name:'Red Buoy',pos:[0,0,-260],lam:680,period:2,duty:0.5,logI:-9},
+      {id:'echo',name:'Beacon Echo',pos:mul(ECHO_DIR,260),lam:1550,period:3,duty:0.7,logI:-8.8,hidden:true}],
+    bodies:[{kind:'star',name:'Shoal',pos:[30,-10,-120],R:1.8,T:4600,spin:0.01},
+      {kind:'planet',name:'Wisp',pos:[3,1.5,-40],R:0.2,light:'Shoal',look:'rock',spin:0.05}],
+    goals:[{type:'lock',target:'echo',text:'Find Beacon Echo and lock on'},{type:'dock',target:'echo',text:'Stop at Beacon Echo'}]},
+  {id:'free-flight',name:'Free Flight',axis:[0,0,-1],start:[0,0,0],fuel:null,life:null,par:null,
+    beacons:[{id:'alpha',name:'Beacon Alpha',pos:[0,0,-150],lam:532,period:1,duty:0.3,logI:-9.3},
+      {id:'buoy',name:'Red Buoy',pos:[40,-12,-400],lam:680,period:2,duty:0.5,logI:-9}],
+    bodies:[...HOME,GATE,...EMBER,{kind:'star',name:'Azure',pos:[60,25,-1200],R:6,T:15000,spin:0.004},
+      {kind:'star',name:'Shoal',pos:[-120,-30,-500],R:1.8,T:4600,spin:0.01}],
+    goals:[],
+    milestones:[
+      {id:'c9',text:'Reach 0.9c',test:s=>ninesOf(rapidity(s.w))>=1},
+      {id:'c999',text:'Reach 0.999c',test:s=>ninesOf(rapidity(s.w))>=3},
+      {id:'g100',text:'Reach γ = 100',test:s=>gam(s.w)>=100},
+      {id:'gate',text:'Fly through the Halo Gate above 0.99c',test:s=>s.gateBest>=0.99},
+      {id:'azure',text:'Visit Azure, the blue giant',test:s=>len(sub(s.pos,[60,25,-1200]))<40},
+      {id:'cmb',text:'Light up the Big Bang\'s afterglow (γ ≥ 600)',test:s=>gam(s.w)>=600},
+    ]},
+];
+
+function beacon(s,id){return s.L.beacons.find(b=>b.id===id);}
+function body(s,name){return s.L.bodies.find(b=>b.name===name);}
+function goal(s){return s.L.goals[s.goal]||null;}
+function target(s){const g=goal(s);return g&&g.target?beacon(s,g.target):null;}
+function fuelLeft(s){return s.unlimited?Infinity:Math.max(0,Math.log(s.m/s.md));}
+
+function makeSim(li){
+  const L=LEVELS[li],s={li,L,t:0,tau:0,pos:L.start.slice(),w:[0,0,0],m:1,md:L.fuel==null?0:Math.exp(-L.fuel),unlimited:L.fuel==null,
+    goal:0,status:'fly',reason:'',events:[],locked:{},done:{},maxGamma:1,fuelUsed:0,gateBest:0,thrust:0,arrival:false,
+    hist:[],lastHist:-1};
+  record(s);
+  return s;
+}
+function record(s){s.hist.push({t:s.t,x:dot(s.pos,s.L.axis),tau:s.tau});s.lastHist=s.tau;}
+
+// Advance by dt of ship time. inp: {thrust: ship-frame direction, brake, fine}.
+function step(s,inp,dt){
+  inp=inp||{};s.thrust=0;s.arrival=false;
+  const n=Math.max(1,Math.ceil(dt/SUB-1e-9)),h=dt/n;
+  for(let i=0;i<n&&s.status==='fly';i++)sub1(s,inp,h);
+  if(s.L.milestones)for(const m of s.L.milestones)if(!s.done[m.id]&&m.test(s)){s.done[m.id]=true;s.events.push({type:'milestone',id:m.id,text:m.text});}
+}
+function sub1(s,inp,h){
+  const w0=s.w,g0=gam(w0),wl=len(w0),phi=Math.asinh(wl),amax=inp.fine?FINE:THRUST;
+  let dir=null,a=0,brakeTo=false;
+  if(inp.brake){
+    if(wl>0){
+      dir=mul(w0,-1/wl);a=amax;
+      // Arrival computer: if the target is ahead and close to our line, burn just hard enough to stop at it.
+      const T=target(s);
+      if(T){const v=mul(w0,1/wl),r=sub(T.pos,s.pos),al=dot(r,v),lat=len(sub(r,mul(v,al)));
+        if(al>0&&lat<2*DOCK_R){const need=(g0-1)/Math.max(al-0.3,1e-3);if(need<a){a=need;s.arrival=true;}}}
+      brakeTo=true;
+    }
+  }else if(inp.thrust&&len(inp.thrust)>0){dir=norm(inp.thrust);a=amax;}
+  let w1=w0;
+  if(dir&&a>0){
+    let dphi=Math.min(a*h,fuelLeft(s));
+    if(brakeTo)dphi=Math.min(dphi,phi);
+    if(dphi>0){
+      if(!s.unlimited)s.m*=Math.exp(-dphi);
+      s.fuelUsed+=dphi;s.thrust=Math.max(s.thrust,a/THRUST);
+      if(brakeTo&&dphi>=phi-1e-12)w1=[0,0,0];
+      else w1=boostToWorld(w0,Math.cosh(dphi),mul(dir,Math.sinh(dphi))).x;
+      const p1=Math.asinh(len(w1));if(p1>MAX_PHI)w1=mul(w1,Math.sinh(MAX_PHI)/len(w1));
+    }
+  }
+  const g1=gam(w1),p0=s.pos;
+  s.pos=add(p0,mul(add(w0,w1),h/2));s.t+=(g0+g1)/2*h;s.tau+=h;s.w=w1;
+  s.maxGamma=Math.max(s.maxGamma,g1);
+  for(const B of s.L.bodies){
+    if(B.kind==='ring'){
+      const a0=p0[2]-B.pos[2],a1=s.pos[2]-B.pos[2];
+      if(a0*a1<0||(a1===0&&a0!==0)){const f=a0/(a0-a1),x=p0[0]+(s.pos[0]-p0[0])*f-B.pos[0],y=p0[1]+(s.pos[1]-p0[1])*f-B.pos[1];
+        if(Math.hypot(x,y)<B.R-B.tube){const b=betaOf(w1);s.gateBest=Math.max(s.gateBest,b);s.events.push({type:'gate',name:B.name,beta:b});}}
+    }else if(len(sub(s.pos,B.pos))<B.R){s.status='lost';s.reason=`You flew into ${B.name}.`;s.events.push({type:'lost'});return;}
+  }
+  if(s.tau-s.lastHist>=HIST_DT)record(s);
+  // Goals, in order. Several can complete in one step.
+  for(let g=goal(s);g;g=goal(s)){
+    let ok=false;
+    if(g.type==='speed')ok=ninesOf(rapidity(s.w))>=g.nines;
+    else if(g.type==='lock')ok=!!s.locked[g.target];
+    else if(g.type==='dock'){const b=beacon(s,g.target);ok=len(sub(b.pos,s.pos))<(b.dockR||DOCK_R)&&betaOf(s.w)<DOCK_BETA;if(ok){s.w=[0,0,0];s.events.push({type:'dock',id:b.id,name:b.name});}}
+    if(!ok)break;
+    s.events.push({type:'goal',i:s.goal,text:g.text});s.goal++;
+  }
+  if(s.L.goals.length&&s.goal>=s.L.goals.length){s.status='won';record(s);s.events.push({type:'won'});return;}
+  if(s.L.life&&s.tau>=s.L.life){s.status='lost';s.reason='Life support ran out.';s.events.push({type:'lost'});return;}
+  if(!s.unlimited&&fuelLeft(s)<1e-9){s.status='lost';s.reason=betaOf(s.w)>DOCK_BETA?'Out of fuel and drifting: you can never stop now.':'Out of fuel, stranded short of the target.';s.events.push({type:'lost'});}
+}
+
+// A beacon as seen now: view() plus the observed wavelength, whether it is lit (blinking, by its own delayed clock),
+// its flux (point source: 1/d^2, times D^2 for the moving observer) and whether your eyes can see it.
+function beaconView(s,b,newton){
+  const v=view(s,b.pos,newton),lam=b.lam/v.D,ln=line(lam),ph=((v.tEmit/b.period)%1+1)%1;
+  const logF=b.logI-2*Math.log10(Math.max(v.d,1e-3))+2*Math.log10(v.D);
+  return Object.assign(v,{lam,rgb:ln.rgb,Y:ln.Y,on:ph<b.duty?1:0.18,logF,visible:ln.Y>0&&logF+Math.log10(ln.Y)>LOG_VIS});
+}
+// Lock on to a beacon: it must be visible and within 6 degrees of where you're looking (ship-frame direction).
+function tryLock(s,look,id){
+  const b=beacon(s,id);if(!b||s.locked[id])return false;
+  const v=beaconView(s,b,false);if(!v.visible)return false;
+  if(dot(norm(look),v.n)<Math.cos(6*Math.PI/180))return false;
+  s.locked[id]=true;s.events.push({type:'lock',id});return true;
+}
+function rating(s){const p=s.L.par;if(!p||s.status!=='won')return 0;return s.tau<=p[0]?3:s.tau<=p[1]?2:1;}
+
+root.PEngine={add,sub,mul,dot,cross,len,norm,anyPerp,C2,T_CMB,T_GAL,THRUST,FINE,MAX_PHI,DOCK_BETA,DOCK_R,LOG_VIS,G_POLE,G_CENTER,G_X,
+  cmf,bbRaw,bb,BB,BB_MIN,BB_MAX,BB_N,BB_STEP,line,band,galEps,gam,rapidity,betaOf,ninesOf,boostToWorld,boostToShip,aberrate,deaberrate,
+  view,shipFrame,stopDist,LEVELS,beacon,body,goal,target,fuelLeft,makeSim,step,beaconView,tryLock,rating};
+})(globalThis);
+</script>
+
+<script>
+// Proper Time: renderer, HUD and screens. The engine above does the physics; this draws it.
+(function(){
+'use strict';
+const E=PEngine,{add,sub,mul,dot,cross,len,norm}=E;
+const $=id=>document.getElementById(id);
+const glc=$('gl'),hud=$('hud'),hx=hud.getContext('2d');
+const store={get(k){try{return JSON.parse(localStorage.getItem('proper-time:'+k));}catch(e){return null;}},set(k,v){try{localStorage.setItem('proper-time:'+k,JSON.stringify(v));}catch(e){}}};
+
+// ---------- Words for each mission ----------
+const TEXT={
+  'first-light':{
+    blurb:'Learn the drive. Push to three nines of c, then stop at a beacon.',
+    brief:'<b>Your job: fly to the green Beacon Alpha, 150 light-seconds straight ahead, and stop there.</b><br><br>Hold <kbd>W</kbd> to speed up, let go to coast, and hold <kbd>S</kbd> to brake when the approach bar above the speed dial turns amber. The prompt above the dial always tells you what to do next. On the way, try for the bonus speeds: 0.9c, 0.99c and 0.999c. Your drive adds <b>rapidity</b>, so speed creeps toward c but never reaches it.',
+    captions:[
+      {when:s=>E.betaOf(s.w)>0.35,text:'Stars ahead are turning blue, stars behind red: the Doppler effect.'},
+      {when:s=>E.ninesOf(E.rapidity(s.w))>=1,text:'0.9c, γ = 2.3. The universe\'s clocks now tick 2.3× faster than yours.'},
+      {when:s=>E.ninesOf(E.rapidity(s.w))>=2,text:'0.99c, γ = 7. The sky is bunching up ahead: aberration. Press V to compare with the Newtonian view.'},
+      {when:s=>E.ninesOf(E.rapidity(s.w))>=3,text:'0.999c, γ = 22. Each extra nine costs the same 1.15 of rapidity. c is a horizon, not a finish line.'},
+      {when:s=>E.ninesOf(E.rapidity(s.w))>=3&&s.tau>9,text:'Press Z to zoom in on the starbow. Z again to zoom out.'},
+      {when:(s,u)=>u.gate,text:'Press R to look back. The gate you just flew through still appears in front of you, reddened.'},
+      {when:(s,u)=>u.brakeZone,text:'The arrival computer throttles your braking so you stop right at the beacon.'},
+    ],
+    phys:s=>`<p><b>Rapidity adds; speed doesn't.</b> You pushed the drive to φ = ${fmtN(Math.acosh(s.maxGamma),2)}, γ = ${fmtN(s.maxGamma,1)}. Speed is β = tanh φ, so equal pushes give 0.76c, 0.96c, 0.995c… The 150 light-second trip took light 150 s. It took you ${fmtT(s.tau)}, because in your frame the distance was contracted by γ.</p>`},
+  'twin-clocks':{
+    blurb:'A round trip of 4,800 light-seconds on 70 seconds of air. Your twin waits at home.',
+    brief:'Deliver a package to <b>Kepler Relay</b>, 2,400 light-seconds away, and come home. Light alone needs 80 minutes for the round trip. Your life support lasts <b>70 seconds of ship time</b>. Your twin is waiting at Hearth Station.',
+    captions:[
+      {when:s=>s.tau<0.5,text:'You will need γ near 100 (0.99995c) to make it on 70 seconds of air.'},
+      {when:s=>E.gam(s.w)>20,text:s=>`In your frame Kepler is now only ${fmtN(E.len(E.shipFrame(s,E.beacon(s,'kepler').pos)),0)} ls away: length contraction.`},
+      {when:s=>{const g=E.goal(s);return g&&g.target==='kepler'&&!E.beaconView(s,E.beacon(s,'kepler')).visible&&E.gam(s.w)>3;},text:s=>'Kepler\'s blue beacon has blueshifted out of sight, into ultraviolet and X-rays. Steer by the HUD marker.'},
+      {when:(s,u)=>u.mHint,text:'Press M to see your worldline on the spacetime diagram.'},
+      {when:s=>s.goal>=1,text:'Delivered. Turn around (T) and head home. Your twin is waiting.'},
+    ],
+    phys:s=>`<p><b>The twin paradox.</b> Your twin stayed home and aged <b>${fmtT(s.t)}</b>. You aged <b>${fmtT(s.tau)}</b>. It isn't symmetric: you accelerated and turned around, so your worldline is bent. Between two meetings the straight (unaccelerated) worldline always has the most proper time. The spacetime diagram (M) shows both worldlines.</p>`},
+  'invisible-light':{
+    blurb:'Find an infrared beacon by Doppler-shifting it into view.',
+    brief:'Beacon Echo transmits at <b>1550 nm</b>, infrared and invisible to your eyes. It lies within 35° of the red buoy ahead. Fly toward it fast enough and Doppler will blueshift its light into the visible band. Too fast and it shifts past violet and disappears again. Lock on (L), then stop at it.',
+    captions:[
+      {when:(s,u)=>u.dHint,text:s=>`Ahead your Doppler factor is ${fmtN(Math.exp(E.rapidity(s.w)),2)}: 1550 nm straight ahead would arrive at ${fmtN(1550/Math.exp(E.rapidity(s.w)),0)} nm.`},
+      {when:s=>!E.beaconView(s,E.beacon(s,'buoy')).visible&&E.betaOf(s.w)>0.5,text:'The red buoy vanished. At this speed its 680 nm light reaches you as ultraviolet.'},
+      {when:s=>E.beaconView(s,E.beacon(s,'echo')).visible,text:'There! Echo, blueshifted into visible light. Centre it and press L to lock on.'},
+      {when:s=>s.locked.echo,text:'Locked. Stop (S), face it (T), and fly there. Once you slow down it will vanish again.'},
+    ],
+    phys:s=>`<p><b>Doppler shift.</b> Light from direction θ arrives with its frequency multiplied by D = γ(1 + β cos θ). Echo's 1550 nm needed D between about 2.1 and 4.6 to land in the 380–780 nm your eyes see. Astronomers run this in reverse: the redshift of a galaxy's spectral lines tells them how fast it is receding.</p>`},
+  'free-flight':{
+    blurb:'Unlimited fuel. Fly anywhere, push to γ in the thousands.',
+    brief:'No mission, unlimited fuel. Fly through the gate, visit the blue giant, and push the drive until the cosmic microwave background, the Big Bang\'s afterglow, glows in front of you.',
+    captions:[{when:s=>s.tau<0.5,text:'Free flight. The milestones are in the objective panel.'},
+      {when:s=>E.gam(s.w)>30,text:'The whole sky is shrinking into a cone ahead. Press Z to zoom in on it.'},
+      {when:s=>E.gam(s.w)>300,text:'Zoom in (Z) dead ahead: the 2.7 K microwave background is being blueshifted toward visible light.'}],
+    phys:()=>''},
+};
+
+// ---------- Formatting ----------
+function fmtN(x,d){return isFinite(x)?x.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'∞';}
+function fmtT(sec){
+  if(sec<60)return fmtN(sec,2)+' s';
+  if(sec<3600){const m=Math.floor(sec/60);return `${m} min ${fmtN(sec-m*60,1).padStart(4,'0')} s`;}
+  if(sec<86400*2){const h=Math.floor(sec/3600),m=Math.floor((sec-h*3600)/60);return `${h} h ${String(m).padStart(2,'0')} min`;}
+  if(sec<3.156e7*2)return fmtN(sec/86400,1)+' days';
+  return fmtN(sec/3.156e7,1)+' years';
+}
+function fmtBeta(w){
+  const phi=E.rapidity(w),b=E.betaOf(w);
+  if(b<0.9)return b.toFixed(3);
+  const n=E.ninesOf(phi);if(n>12)return '0.'+'9'.repeat(12)+'…';
+  const om=2/(Math.exp(2*phi)+1);return (1-om).toFixed(Math.min(14,Math.floor(n)+2));
+}
+function fmtLam(l){return l<1?l.toExponential(1)+' nm':l<1e4?fmtN(l,0)+' nm':l<1e7?fmtN(l/1000,1)+' µm':fmtN(l/1e6,1)+' mm';}
+
+// ---------- Quaternions (camera -> ship frame) ----------
+const qmul=(a,b)=>[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
+const qaxis=(ax,an)=>{const s=Math.sin(an/2),n=norm(ax);return [n[0]*s,n[1]*s,n[2]*s,Math.cos(an/2)];};
+const qnorm=q=>{const l=Math.hypot(...q);return q.map(x=>x/l);};
+function qrot(q,v){const u=[q[0],q[1],q[2]],t=mul(cross(u,v),2);return add(add(v,mul(t,q[3])),cross(u,t));}
+
+// ---------- WebGL ----------
+const gl=glc.getContext('webgl2',{antialias:false,alpha:false,premultipliedAlpha:false,powerPreference:'high-performance'});
+if(!gl){$('nogl').hidden=false;$('title').hidden=true;return;}
+const hdrOK=!!gl.getExtension('EXT_color_buffer_float');
+const OUT=hdrOK?1:1/8;   // without float buffers, store HDR values scaled down in 8 bits
+const LOG_NEAR=-10;       // nearby bodies are drawn this many decades dimmer than reality (see Info)
+const FAR=1e8,FC=2/Math.log2(FAR+1);
+
+const COMMON=`#version 300 es
+precision highp float;precision highp int;precision highp sampler2D;
+uniform sampler2D uBB;uniform float uPhi;uniform vec3 uV;uniform float uNewton;uniform float uLogExp;uniform float uOut;
+const float BB_MIN=${E.BB_MIN.toFixed(6)},BB_STEP=${E.BB_STEP.toFixed(9)},BB_TOP=${E.BB_MAX.toFixed(6)};const int BB_N=${E.BB_N};const float L10=2.302585093;
+float lg(float x){return log(x)/L10;}
+vec4 bbLook(float logT){
+  float f=(logT-BB_MIN)/BB_STEP;
+  if(f<0.)return vec4(0.,0.,0.,-1e4);
+  if(f>=float(BB_N-1)){vec4 e=texelFetch(uBB,ivec2(BB_N-1,0),0);e.a+=logT-BB_TOP;return e;}
+  int i=int(f);float t=f-float(i);
+  return mix(texelFetch(uBB,ivec2(i,0),0),texelFetch(uBB,ivec2(i+1,0),0),t);
+}
+// Exposure-scaled radiance of a diluted blackbody: eps * B(T), with eps and T as log10.
+vec3 glow(float logT,float logEps){vec4 b=bbLook(logT);float e=b.a+logEps+uLogExp;return e<-8.?vec3(0.):b.rgb*exp(e*L10);}
+// Aberration (half-angle form, exact near c): universe-frame direction to source -> apparent direction, Doppler factor.
+void aberr(vec3 n,out vec3 np,out float D){
+  if(uNewton>.5){np=n;D=1.;return;}
+  float c=dot(n,uV);vec3 p=n-c*uV;float sl=length(p);
+  float h=.5*atan(sl,c),hp=atan(exp(-uPhi)*sin(h),cos(h));
+  np=sl>1e-7?cos(2.*hp)*uV+sin(2.*hp)*(p/sl):n;
+  float ch=cos(h),sh=sin(h);D=exp(uPhi)*ch*ch+exp(-uPhi)*sh*sh;
+}
+void deaberr(vec3 np,out vec3 n,out float D){
+  if(uNewton>.5){n=np;D=1.;return;}
+  float c=dot(np,uV);vec3 p=np-c*uV;float sl=length(p);
+  float hp=.5*atan(sl,c),h=atan(exp(uPhi)*sin(hp),cos(hp));
+  n=sl>1e-7?cos(2.*h)*uV+sin(2.*h)*(p/sl):np;
+  float ch=cos(h),sh=sin(h);D=exp(uPhi)*ch*ch+exp(-uPhi)*sh*sh;
+}
+float hash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float vnoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);}
+float fbm(vec3 p){float a=.5,s=0.;for(int k=0;k<5;k++){s+=a*vnoise(p);p*=2.03;a*=.5;}return s;}
+`;
+const VS_FULL=`#version 300 es
+out vec2 vP;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.-1.;vP=p;gl_Position=vec4(p,0.,1.);}`;
+const FS_SKY=COMMON+`
+in vec2 vP;out vec4 o;uniform mat3 uCam;uniform vec2 uTan;uniform vec3 uGP,uGC;
+float galEps(vec3 n){
+  float b=asin(clamp(dot(n,uGP),-1.,1.)),c=dot(n,uGC);
+  float band=exp(-pow(b/.16,2.)),bulge=exp(-pow((1.-c)/.25,2.))*exp(-pow(b/.3,2.));
+  float base=6.*band*(.6+.4*max(0.,c+.2))+12.*bulge;
+  float tex=.3+1.4*fbm(n*5.),dust=1.-.75*exp(-pow(b/.04,2.))*smoothstep(.35,.7,fbm(n*9.+3.));
+  return 1e-13*(1.+base*tex*dust);
+}
+void main(){
+  vec3 np=normalize(uCam*normalize(vec3(vP*uTan,-1.)));vec3 n;float D;deaberr(np,n,D);float lD=lg(D);
+  vec3 col=glow(lg(${E.T_CMB})+lD,0.)+glow(lg(${E.T_GAL}.)+lD,lg(galEps(n)));
+  o=vec4(col*uOut,1.);
+}`;
+const VS_STARS=COMMON+`
+in vec3 aDir;in vec2 aTL;uniform mat3 uCamInv;uniform mat4 uProj;uniform float uLogPix;
+out vec3 vCol;out float vSig;out float vSize;
+void main(){
+  vec3 np;float D;aberr(aDir,np,D);float lD=lg(D);
+  vec4 b=bbLook(aTL.x+lD);float e=b.a+aTL.y-2.*lD+uLogExp-uLogPix;
+  gl_Position=uProj*vec4(uCamInv*np,1.);gl_Position.z=gl_Position.w*.9999;
+  if(e<-3.3){gl_Position=vec4(2.,2.,2.,1.);gl_PointSize=1.;vCol=vec3(0.);return;}
+  float E=exp(e*L10);vSig=.6+.45*clamp(lg(max(E,1.)),0.,6.);vSize=ceil(vSig*6.);gl_PointSize=vSize;vCol=b.rgb*E;
+}`;
+const FS_SPRITE=`#version 300 es
+precision highp float;in vec3 vCol;in float vSig;in float vSize;out vec4 o;uniform float uOut;uniform float uHalo;
+void main(){vec2 p=(gl_PointCoord-.5)*vSize;float r2=dot(p,p),s2=vSig*vSig;
+  float r=sqrt(r2);  // the glow fades to zero before the sprite's square edge
+  float w=(exp(-r2/(2.*s2))/(6.2831853*s2)+uHalo*exp(-r/(1.5*vSig))/(20.*s2))*clamp(1.-smoothstep(.3*vSize,.5*vSize,r),0.,1.);o=vec4(vCol*w*uOut,1.);}`;
+const VS_BODY=COMMON+`
+in vec3 aPos;in vec3 aNrm;uniform vec3 uRel;uniform mat3 uRot;uniform float uScale;uniform mat3 uCamInv;uniform mat4 uProj;uniform float uFC;
+out vec3 vLocal;out vec3 vN;out vec3 vDir;out float vLD;
+void main(){
+  vec3 r=uRel+uRot*(aPos*uScale);float d=length(r);vec3 n=r/d,np;float D;aberr(n,np,D);
+  gl_Position=uProj*vec4(uCamInv*(np*(d*D)),1.);
+  gl_Position.z=(log2(max(1e-6,1.+gl_Position.w))*uFC-1.)*gl_Position.w;
+  vLocal=aPos;vN=uRot*aNrm;vDir=n;vLD=lg(D);
+}`;
+const FS_BODY=COMMON+`
+in vec3 vLocal;in vec3 vN;in vec3 vDir;in float vLD;out vec4 o;
+uniform int uKind;uniform int uLook;uniform float uLogT;uniform vec3 uLight;uniform float uLightEps;uniform float uLogTL;uniform float uLogNear;
+void main(){
+  vec3 N=normalize(vN);float mu=-dot(N,normalize(vDir));if(mu<=0.)discard;
+  vec3 col;
+  if(uKind==0){ // star: limb darkening, granulation, spots; the limb is a little cooler
+    float g=fbm(vLocal*9.),sp=smoothstep(.64,.74,fbm(vLocal*2.6+5.));
+    col=glow(uLogT+vLD-.05*(1.-mu),lg((.38+.62*mu)*(.8+.4*g)*(1.-.35*sp))+uLogNear);
+  }else if(uKind==1){ // planet lit by its star
+    float alb;vec3 tint;
+    if(uLook==0){float v=.5+.5*sin(vLocal.y*15.+2.4*fbm(vLocal*3.+vec3(0.,vLocal.y*4.,0.)));alb=mix(.3,.8,v);tint=mix(vec3(1.,.78,.55),vec3(1.,.95,.88),v);}
+    else if(uLook==1){alb=.55+.35*fbm(vLocal*5.);tint=vec3(.85,.95,1.08);}
+    else{float c=smoothstep(.48,.56,fbm(vLocal*3.));alb=.12+.25*fbm(vLocal*7.)+.25*c;tint=mix(vec3(1.,.82,.7),vec3(.9,.92,.95),c);}
+    float lam=max(0.,dot(N,uLight));
+    col=glow(uLogTL+vLD,lg(max(alb*lam,2e-3*alb))+uLightEps+uLogNear)*tint;
+  }else{ // ring: dark hull lit by the nearest star, plus rows of lamps on the inner face
+    float ang=atan(vLocal.y,vLocal.x);vec3 rc=vec3(normalize(vLocal.xy),0.);float inner=-dot(N,rc);
+    float lamp=step(fract(ang*64./6.2831853),.18)*step(.55,inner);
+    float lam=max(0.,dot(N,uLight));
+    col=glow(uLogTL+vLD,lg(max(.08*lam,1e-4))+uLightEps+uLogNear)+glow(lg(6500.)+vLD,lg(max(lamp*.9,1e-9))+uLogNear+.6);
+  }
+  o=vec4(col*uOut,1.);
+}`;
+const VS_SPRITE=`#version 300 es
+precision highp float;in vec3 aPos;in vec3 aCol;in float aSig;uniform mat4 uProj;uniform float uFC;out vec3 vCol;out float vSig;out float vSize;
+void main(){gl_Position=uProj*vec4(aPos,1.);gl_Position.z=(log2(max(1e-6,1.+gl_Position.w))*uFC-1.)*gl_Position.w;
+  vSig=aSig;vSize=ceil(aSig*12.);gl_PointSize=vSize;vCol=aCol;}`;
+const FS_TONE=`#version 300 es
+precision highp float;in vec2 vP;out vec4 o;uniform sampler2D uHdr;uniform float uScale;
+void main(){
+  vec2 uv=vP*.5+.5;vec3 c=texture(uHdr,uv).rgb*uScale;
+  float L=dot(c,vec3(.2126,.7152,.0722));vec3 m=c*(1.+L/9.)/(1.+L);
+  float mx=max(m.r,max(m.g,m.b));if(mx>1.)m=mix(m/mx,vec3(1.),clamp((mx-1.)*.6,0.,1.));
+  m*=1.-.18*pow(length(vP*vec2(.85,1.)),3.);
+  float dn=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)/255.;
+  o=vec4(pow(max(m,0.),vec3(1./2.2))+dn,1.);
+}`;
+
+function compile(vs,fs){
+  const mk=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)+'\n'+src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));return s;};
+  const p=gl.createProgram();gl.attachShader(p,mk(gl.VERTEX_SHADER,vs));gl.attachShader(p,mk(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+  const u={},n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i);u[a.name]=gl.getUniformLocation(p,a.name);}
+  return {p,u};
+}
+const P={sky:compile(VS_FULL,FS_SKY),stars:compile(VS_STARS,FS_SPRITE),body:compile(VS_BODY,FS_BODY),sprite:compile(VS_SPRITE,FS_SPRITE),tone:compile(VS_FULL,FS_TONE)};
+
+// Blackbody table as a 1-D float texture (read with texelFetch, so no float filtering needed).
+const bbTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,bbTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,E.BB_N,1,0,gl.RGBA,gl.FLOAT,E.BB);
+for(const k of[gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+const emptyVao=gl.createVertexArray();
+
+// Background stars: a deterministic catalogue, crowded toward the galactic plane. Brightness follows real magnitudes
+// (N(<m) grows 10^0.5 per magnitude) in units where the Sun's surface is 1: flux = 6.8e-5 * 10^(-0.4 (m + 26.74)).
+function rng(seed){return ()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const STARS=(function(N){
+  const r=rng(11),d=new Float32Array(N*3),tl=new Float32Array(N*2);
+  const gauss=()=>Math.sqrt(-2*Math.log(r()+1e-12))*Math.cos(2*Math.PI*r());
+  for(let i=0;i<N;i++){
+    let n;
+    if(r()<0.55){const l=r()*2*Math.PI,b=gauss()*0.17;n=add(mul(add(mul(E.G_CENTER,Math.cos(l)),mul(E.G_X,Math.sin(l))),Math.cos(b)),mul(E.G_POLE,Math.sin(b)));}
+    else{const z=2*r()-1,a=r()*2*Math.PI,q=Math.sqrt(1-z*z);n=[q*Math.cos(a),q*Math.sin(a),z];}
+    const m=6.7+2*Math.log10(Math.max(1e-9,r())),k=r();
+    const T=k<0.42?3000+1300*r():k<0.78?4300+1700*r():k<0.92?6000+2500*r():9000+21000*r()*r();
+    d.set(n,i*3);tl[i*2]=Math.log10(T);tl[i*2+1]=Math.log10(6.8e-5)-0.4*(m+26.74)-E.bb(Math.log10(T)).logY;
+  }
+  return {N,d,tl};
+})(7000);
+const starVao=gl.createVertexArray();gl.bindVertexArray(starVao);
+function attrib(prog,name,data,size,usage){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,usage||gl.STATIC_DRAW);const l=gl.getAttribLocation(prog.p,name);if(l>=0){gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0);}return b;}
+attrib(P.stars,'aDir',STARS.d,3);attrib(P.stars,'aTL',STARS.tl,2);
+
+// Meshes: a fine icosphere (aberration bends straight edges, so triangles must stay small) and a torus for the gate.
+function icosphere(sub){
+  const t=(1+Math.sqrt(5))/2;let V=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(norm);
+  let F=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  for(let k=0;k<sub;k++){const cache=new Map(),mid=(a,b)=>{const key=a<b?a+'_'+b:b+'_'+a;if(!cache.has(key)){cache.set(key,V.length);V.push(norm(add(V[a],V[b])));}return cache.get(key);};
+    const F2=[];for(const [a,b,c] of F){const ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);F2.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]);}F=F2;}
+  return {pos:new Float32Array(V.flat()),nrm:new Float32Array(V.flat()),idx:new Uint16Array(F.flat())};
+}
+function torus(R,r,nu,nv){
+  const pos=[],nrm=[],idx=[];
+  for(let i=0;i<=nu;i++)for(let j=0;j<=nv;j++){const u=i/nu*2*Math.PI,v=j/nv*2*Math.PI,cu=Math.cos(u),su=Math.sin(u),cv=Math.cos(v),sv=Math.sin(v);
+    pos.push((R+r*cv)*cu,(R+r*cv)*su,r*sv);nrm.push(cv*cu,cv*su,sv);}
+  for(let i=0;i<nu;i++)for(let j=0;j<nv;j++){const a=i*(nv+1)+j,b=a+nv+1;idx.push(a,b,a+1,b,b+1,a+1);}
+  return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
+}
+function meshVao(m){const vao=gl.createVertexArray();gl.bindVertexArray(vao);attrib(P.body,'aPos',m.pos,3);attrib(P.body,'aNrm',m.nrm,3);
+  const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,m.idx,gl.STATIC_DRAW);return {vao,count:m.idx.length};}
+const SPHERE=meshVao(icosphere(5));
+const ringMeshes=new Map();
+function ringMesh(B){const k=B.R+'/'+B.tube;if(!ringMeshes.has(k))ringMeshes.set(k,meshVao(torus(B.R,B.tube,360,24)));return ringMeshes.get(k);}
+
+// Beacon sprites: computed on the CPU each frame (there are only a few).
+const spriteVao=gl.createVertexArray();gl.bindVertexArray(spriteVao);
+const SPR_MAX=16,sprPos=new Float32Array(SPR_MAX*3),sprCol=new Float32Array(SPR_MAX*3),sprSig=new Float32Array(SPR_MAX);
+const sprBufs=[attrib(P.sprite,'aPos',sprPos,3,gl.DYNAMIC_DRAW),attrib(P.sprite,'aCol',sprCol,3,gl.DYNAMIC_DRAW),attrib(P.sprite,'aSig',sprSig,1,gl.DYNAMIC_DRAW)];
+gl.bindVertexArray(null);
+
+// HDR target
+let fbo=null,fboTex=null,fboDepth=null,W=0,H=0,cssW=0,cssH=0,dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);cssW=innerWidth;cssH=innerHeight;
+  const w=Math.max(1,Math.round(cssW*dpr)),h=Math.max(1,Math.round(cssH*dpr));
+  hud.width=w;hud.height=h;
+  if(w===W&&h===H)return;W=w;H=h;glc.width=w;glc.height=h;
+  if(fbo){gl.deleteFramebuffer(fbo);gl.deleteTexture(fboTex);gl.deleteRenderbuffer(fboDepth);}
+  fboTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,hdrOK?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,hdrOK?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+  for(const k of[gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST);
+  fboDepth=gl.createRenderbuffer();gl.bindRenderbuffer(gl.RENDERBUFFER,fboDepth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT24,w,h);
+  fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTex,0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,fboDepth);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+addEventListener('resize',resize);resize();
+
+// ---------- Exposure (the eye adapting) ----------
+// Metered on the mean light of the diffuse sky (galaxy + microwave background) in view, like an eye or a camera:
+// the bright forward cap sets the exposure, so the beamed sky ahead keeps its detail and the rest goes dark, as it would.
+// The cap can be far smaller than the grid spacing, so it gets its own rings of samples weighted by solid angle.
+const KEY=0.02;
+function skyLum(n,D){return 10**E.bb(Math.log10(E.T_CMB*D)).logY+E.galEps(n)*10**E.bb(Math.log10(E.T_GAL*D)).logY;}
+const REST_EXP=(function(){const r=rng(3);let s=0;for(let i=0;i<300;i++){const z=2*r()-1,a=r()*6.283,q=Math.sqrt(1-z*z);s+=Math.log10(skyLum([q*Math.cos(a),q*Math.sin(a),z],1));}return Math.log10(KEY)-s/300;})();
+function meterExposure(s,cam,newton){
+  const wl=len(s.w),phi=newton?0:Math.asinh(wl),v=wl>0?mul(s.w,1/wl):[0,0,-1];
+  const lum=np=>{const a=phi<1e-9?{n:np,D:1}:E.deaberrate(np,v,phi);return skyLum(a.n,a.D);};
+  const omegaView=4*Math.atan(cam.tx*cam.ty/Math.sqrt(1+cam.tx*cam.tx+cam.ty*cam.ty));
+  let sum=0,wsum=0;
+  for(let i=0;i<9;i++)for(let j=0;j<6;j++){
+    const dc=norm([((i+.5)/9*2-1)*cam.tx,((j+.5)/6*2-1)*cam.ty,-1]);
+    sum+=lum(norm(add(add(mul(cam.r,dc[0]),mul(cam.u,dc[1])),mul(cam.b,dc[2]))));wsum+=1;}
+  sum/=wsum;
+  const fz=dot(v,cam.f);
+  if(phi>0.3&&fz>0&&Math.abs(dot(v,cam.r))/fz<cam.tx&&Math.abs(dot(v,cam.u))/fz<cam.ty){
+    const A=Math.min(0.5,4*Math.acos(Math.tanh(phi))),e1=E.anyPerp(v),e2=cross(v,e1);
+    for(let i=0;i<6;i++){const th=A*(i+.5)/6,ring=2*Math.PI*Math.sin(th)*A/6/omegaView;let r=0;
+      for(let j=0;j<8;j++){const az=j/8*2*Math.PI;r+=lum(add(mul(v,Math.cos(th)),mul(add(mul(e1,Math.cos(az)),mul(e2,Math.sin(az))),Math.sin(th))));}
+      sum+=r/8*ring;}
+  }
+  return Math.min(REST_EXP+1,Math.log10(KEY)-Math.log10(Math.max(sum,1e-300)));
+}
+
+// ---------- Game state ----------
+const ui={screen:'title',li:0,s:null,q:[0,0,0,1],fov:75,newton:false,mink:false,expLock:false,logExp:REST_EXP,hide:false,
+  keys:new Set(),turn:null,caps:[],capShown:new Set(),cap:null,capT:0,gate:false,brakeZone:false,mHint:false,dHint:false,toast:null,toastT:0,
+  titleT:0};
+const titleSim={pos:[0,0,0],w:[0,0,-Math.sinh(1.3)],t:0,tau:0,L:{bodies:[],beacons:[]}};
+
+function camBasis(){
+  const q=ui.q,r=qrot(q,[1,0,0]),u=qrot(q,[0,1,0]),b=qrot(q,[0,0,1]);
+  const ty=Math.tan(ui.fov*Math.PI/360),tx=ty*cssW/cssH;
+  return {r,u,b,f:mul(b,-1),tx,ty};
+}
+function projMat(cam){const f=1/cam.ty,a=cssW/cssH;return new Float32Array([f/a,0,0,0,0,f,0,0,0,0,-1,-1,0,0,-0.0002,0]);}
+
+function render(s,newton){
+  const cam=camBasis(),wl=len(s.w),phi=newton?0:Math.asinh(wl),v=wl>0?mul(s.w,1/wl):[0,0,-1];
+  const R=new Float32Array([...cam.r,...cam.u,...cam.b]),RI=new Float32Array([cam.r[0],cam.u[0],cam.b[0],cam.r[1],cam.u[1],cam.b[1],cam.r[2],cam.u[2],cam.b[2]]);
+  const proj=projMat(cam),logPix=2*Math.log10(2*cam.ty/H);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.viewport(0,0,W,H);
+  gl.depthMask(true);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const common=pr=>{gl.useProgram(pr.p);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,bbTex);gl.uniform1i(pr.u.uBB,0);
+    gl.uniform1f(pr.u.uPhi,phi);gl.uniform3fv(pr.u.uV,v);gl.uniform1f(pr.u.uNewton,newton?1:0);gl.uniform1f(pr.u.uLogExp,ui.logExp);gl.uniform1f(pr.u.uOut,OUT);};
+  // Sky
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);
+  common(P.sky);gl.uniformMatrix3fv(P.sky.u.uCam,false,R);gl.uniform2f(P.sky.u.uTan,cam.tx,cam.ty);gl.uniform3fv(P.sky.u.uGP,E.G_POLE);gl.uniform3fv(P.sky.u.uGC,E.G_CENTER);
+  gl.bindVertexArray(emptyVao);gl.drawArrays(gl.TRIANGLES,0,3);
+  // Stars
+  gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);
+  common(P.stars);gl.uniformMatrix3fv(P.stars.u.uCamInv,false,RI);gl.uniformMatrix4fv(P.stars.u.uProj,false,proj);gl.uniform1f(P.stars.u.uLogPix,logPix);gl.uniform1f(P.stars.u.uHalo,0.0);
+  gl.bindVertexArray(starVao);gl.drawArrays(gl.POINTS,0,STARS.N);
+  // Bodies
+  gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+  common(P.body);gl.uniformMatrix3fv(P.body.u.uCamInv,false,RI);gl.uniformMatrix4fv(P.body.u.uProj,false,proj);gl.uniform1f(P.body.u.uFC,FC);gl.uniform1f(P.body.u.uLogNear,LOG_NEAR);
+  for(const B of s.L.bodies){
+    const rel=sub(B.pos,s.pos),d=len(rel);
+    const ang=(B.spin||0)*(newton?s.t:s.t-d),c=Math.cos(ang),sn=Math.sin(ang);   // spin by the body's own delayed clock
+    gl.uniform3fv(P.body.u.uRel,rel);
+    const star=B.light?E.body(s,B.light):E.body(s,'Sol')||s.L.bodies.find(b=>b.kind==='star');
+    const L=star?sub(star.pos,B.pos):[0,1,0],dl=len(L);
+    gl.uniform3fv(P.body.u.uLight,norm(L));gl.uniform1f(P.body.u.uLightEps,star?2*Math.log10(star.R/dl):-3);gl.uniform1f(P.body.u.uLogTL,Math.log10(star?star.T:5700));
+    if(B.kind==='ring'){
+      gl.uniformMatrix3fv(P.body.u.uRot,false,new Float32Array([1,0,0,0,1,0,0,0,1]));gl.uniform1f(P.body.u.uScale,1);gl.uniform1i(P.body.u.uKind,2);
+      const m=ringMesh(B);gl.bindVertexArray(m.vao);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_SHORT,0);
+    }else{
+      gl.uniformMatrix3fv(P.body.u.uRot,false,new Float32Array([c,0,-sn,0,1,0,sn,0,c]));gl.uniform1f(P.body.u.uScale,B.R);
+      gl.uniform1i(P.body.u.uKind,B.kind==='star'?0:1);gl.uniform1i(P.body.u.uLook,{bands:0,ice:1,rock:2}[B.look]||0);gl.uniform1f(P.body.u.uLogT,Math.log10(B.T||5000));
+      gl.bindVertexArray(SPHERE.vao);gl.drawElements(gl.TRIANGLES,SPHERE.count,gl.UNSIGNED_SHORT,0);
+    }
+  }
+  // Beacons
+  let k=0;
+  for(const b of s.L.beacons){
+    if(k>=SPR_MAX)break;
+    const bv=E.beaconView(s,b,newton),p=mul(bv.n,bv.dApp),pc=[dot(p,cam.r),dot(p,cam.u),dot(p,cam.b)];
+    const e=10**(bv.logF+ui.logExp-logPix)*bv.on;
+    sprPos.set(pc,k*3);sprCol.set(bv.rgb.map(x=>x*e),k*3);sprSig[k]=0.8+0.5*Math.max(0,Math.min(6,Math.log10(Math.max(1,e*bv.Y))));k++;
+  }
+  if(k){
+    gl.enable(gl.BLEND);gl.depthMask(false);
+    gl.useProgram(P.sprite.p);gl.uniformMatrix4fv(P.sprite.u.uProj,false,proj);gl.uniform1f(P.sprite.u.uFC,FC);gl.uniform1f(P.sprite.u.uOut,OUT);gl.uniform1f(P.sprite.u.uHalo,1.0);
+    gl.bindVertexArray(spriteVao);
+    [sprPos,sprCol,sprSig].forEach((a,i)=>{gl.bindBuffer(gl.ARRAY_BUFFER,sprBufs[i]);gl.bufferSubData(gl.ARRAY_BUFFER,0,a);});
+    gl.drawArrays(gl.POINTS,0,k);gl.depthMask(true);
+  }
+  // Tone map to the screen
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);
+  gl.useProgram(P.tone.p);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboTex);gl.uniform1i(P.tone.u.uHdr,0);gl.uniform1f(P.tone.u.uScale,1/OUT);
+  gl.bindVertexArray(emptyVao);gl.drawArrays(gl.TRIANGLES,0,3);
+  return cam;
+}
+
+// ---------- HUD ----------
+const COL={ink:'#e8eaf7',muted:'#8a90b8',blue:'#5fb4ff',red:'#ff5d4f',amber:'#f5b14c',ok:'#8ef0b0',panel:'rgba(10,13,30,0.62)',line:'rgba(60,70,130,0.7)'};
+const MONO='"IBM Plex Mono",ui-monospace,Consolas,monospace',DISP='Michroma,"Eurostile",system-ui,sans-serif';
+function panel(x,y,w,h,title){hx.fillStyle=COL.panel;hx.strokeStyle=COL.line;hx.lineWidth=1;hx.beginPath();hx.roundRect(x,y,w,h,6);hx.fill();hx.stroke();
+  if(title){hx.font=`10px ${DISP}`;hx.fillStyle=COL.muted;hx.textAlign='left';hx.textBaseline='top';hx.fillText(title,x+12,y+10);}}
+function txt(s,x,y,o){o=o||{};hx.font=o.font||`12px ${MONO}`;hx.fillStyle=o.col||COL.ink;hx.textAlign=o.align||'left';hx.textBaseline=o.base||'alphabetic';hx.fillText(s,x,y);}
+function project(cam,p){const z=-dot(p,cam.b);if(z<=1e-9)return null;return {x:cssW/2+dot(p,cam.r)/z/cam.tx*cssW/2,y:cssH/2-dot(p,cam.u)/z/cam.ty*cssH/2};}
+function shipDir(cam,d){return project(cam,d);} // a ship-frame direction (unit vector) on screen
+// Hue along the dial: blue at rest, through violet, to red near c.
+function dialColor(u){return `hsl(${215+145*u},90%,${58+4*u}%)`;}
+
+function drawHUD(s,cam){
+  hx.setTransform(dpr,0,0,dpr,0,0);hx.clearRect(0,0,cssW,cssH);
+  if(ui.hide)return;
+  const L=s.L,wl=len(s.w),phi=E.rapidity(s.w),g=E.gam(s.w),beta=E.betaOf(s.w),nines=E.ninesOf(phi),T=E.target(s),narrow=cssW<1050;
+  // --- centre markers ---
+  hx.strokeStyle='rgba(232,234,247,0.55)';hx.lineWidth=1;
+  hx.beginPath();hx.moveTo(cssW/2-9,cssH/2);hx.lineTo(cssW/2-3,cssH/2);hx.moveTo(cssW/2+3,cssH/2);hx.lineTo(cssW/2+9,cssH/2);hx.moveTo(cssW/2,cssH/2-9);hx.lineTo(cssW/2,cssH/2-3);hx.moveTo(cssW/2,cssH/2+3);hx.lineTo(cssW/2,cssH/2+9);hx.stroke();
+  if(wl>1e-6){
+    const v=mul(s.w,1/wl),pg=shipDir(cam,v),rg=shipDir(cam,mul(v,-1));
+    if(pg){hx.strokeStyle=COL.ok;hx.beginPath();hx.arc(pg.x,pg.y,7,0,7);hx.moveTo(pg.x,pg.y-7);hx.lineTo(pg.x,pg.y-12);hx.moveTo(pg.x-7,pg.y);hx.lineTo(pg.x-12,pg.y);hx.moveTo(pg.x+7,pg.y);hx.lineTo(pg.x+12,pg.y);hx.stroke();}
+    if(rg){hx.strokeStyle=COL.amber;hx.beginPath();hx.arc(rg.x,rg.y,7,0,7);hx.moveTo(rg.x-5,rg.y-5);hx.lineTo(rg.x+5,rg.y+5);hx.moveTo(rg.x+5,rg.y-5);hx.lineTo(rg.x-5,rg.y+5);hx.stroke();}
+  }
+  // search cone (Invisible Light): 35 degrees around the buoy, drawn where those directions appear
+  if(L.id==='invisible-light'&&!s.locked.echo){
+    const ax=norm(sub(E.beacon(s,'buoy').pos,s.pos)),e1=E.anyPerp(ax),e2=cross(ax,e1),c35=Math.cos(35*Math.PI/180),s35=Math.sin(35*Math.PI/180);
+    hx.setLineDash([5,6]);hx.strokeStyle='rgba(245,177,76,0.6)';hx.beginPath();let pen=false;
+    for(let i=0;i<=96;i++){const a=i/96*2*Math.PI,n=add(mul(ax,c35),add(mul(e1,s35*Math.cos(a)),mul(e2,s35*Math.sin(a))));
+      const ap=ui.newton||wl<1e-9?n:E.aberrate(n,mul(s.w,1/wl),phi).n,p=shipDir(cam,ap);
+      if(p){pen?hx.lineTo(p.x,p.y):hx.moveTo(p.x,p.y);pen=true;}else pen=false;}
+    hx.stroke();hx.setLineDash([]);
+  }
+  // beacons: labels on the visible ones, and brackets on the target
+  for(const b of L.beacons){
+    const bv=E.beaconView(s,b,ui.newton),isT=T&&T.id===b.id,known=!b.hidden||s.locked[b.id];
+    if(!isT&&!(known&&bv.visible))continue;
+    if(isT&&!known)continue;
+    const p=shipDir(cam,bv.n);
+    const col=isT?COL.blue:'rgba(232,234,247,0.7)';
+    if(p&&p.x>-20&&p.x<cssW+20&&p.y>-20&&p.y<cssH+20){
+      if(isT){hx.strokeStyle=col;hx.lineWidth=1.6;const r=18;hx.beginPath();
+        for(const [sx,sy] of[[-1,-1],[1,-1],[1,1],[-1,1]]){hx.moveTo(p.x+sx*r,p.y+sy*(r-5));hx.lineTo(p.x+sx*r,p.y+sy*r);hx.lineTo(p.x+sx*(r-5),p.y+sy*r);}hx.stroke();}
+      txt(isT?`▸ TARGET  ${b.name} · ${fmtN(bv.d,bv.d<10?1:0)} ls`:b.name,p.x+24,p.y-4,{col,font:isT?`12px ${MONO}`:`11px ${MONO}`});
+      txt(`${fmtLam(b.lam)} → ${fmtLam(bv.lam)} ${bv.visible?'':'('+E.band(bv.lam)+')'}`,p.x+24,p.y+11,{col:COL.muted,font:`10.5px ${MONO}`});
+      // where it is now in your frame (not where its light appears)
+      if(isT&&!ui.newton){const sf=E.shipFrame(s,b.pos),q=shipDir(cam,norm(sf));
+        if(q&&Math.hypot(q.x-p.x,q.y-p.y)>10){hx.strokeStyle='rgba(95,180,255,0.5)';hx.beginPath();hx.moveTo(q.x,q.y-6);hx.lineTo(q.x+6,q.y);hx.lineTo(q.x,q.y+6);hx.lineTo(q.x-6,q.y);hx.closePath();hx.stroke();}}
+    }else if(isT){ // off screen: an arrow at the edge
+      const z=-dot(bv.n,cam.b),x=dot(bv.n,cam.r),y=dot(bv.n,cam.u),a=Math.atan2(-y,x),cx=cssW/2,cy=cssH/2,rr=Math.min(cssW,cssH)*0.42;
+      const ex=cx+Math.cos(a)*rr,ey=cy+Math.sin(a)*rr;hx.fillStyle=COL.blue;hx.beginPath();hx.moveTo(ex+Math.cos(a)*12,ey+Math.sin(a)*12);
+      hx.lineTo(ex+Math.cos(a+2.5)*9,ey+Math.sin(a+2.5)*9);hx.lineTo(ex+Math.cos(a-2.5)*9,ey+Math.sin(a-2.5)*9);hx.fill();
+      txt(b.name+(z<0?' (behind)':''),ex,ey+(Math.sin(a)>0?-14:22),{col:COL.blue,align:'center',font:`11px ${MONO}`});
+    }
+  }
+  // lock prompt
+  if(L.id==='invisible-light'&&!s.locked.echo){const bv=E.beaconView(s,E.beacon(s,'echo'),false);
+    if(bv.visible&&dot(bv.n,cam.f)>Math.cos(6*Math.PI/180))txt('[L] LOCK',cssW/2,cssH/2+34,{col:COL.amber,align:'center',font:`12px ${MONO}`});}
+
+  // --- clocks (top left) ---
+  const pw=narrow?220:250;
+  let y0=16;panel(16,y0,pw,L.life?150:L.twin?132:112,'CLOCKS');
+  txt('SHIP  τ',28,y0+44,{col:COL.blue,font:`11px ${MONO}`});txt(fmtT(s.tau),16+pw-12,y0+44,{align:'right',font:`15px ${MONO}`});
+  txt('UNIVERSE  t',28,y0+68,{col:COL.red,font:`11px ${MONO}`});txt(fmtT(s.t),16+pw-12,y0+68,{align:'right',font:`15px ${MONO}`});
+  txt(`universe runs ×${g<100?fmtN(g,2):fmtN(g,0)} faster`,28,y0+90,{col:COL.muted,font:`11px ${MONO}`});
+  let yy=y0+90;
+  if(L.twin){yy+=20;txt(`your twin has aged ${fmtT(s.t)}`,28,yy,{col:COL.amber,font:`11px ${MONO}`});}
+  if(L.life){yy+=18;const f=Math.max(0,1-s.tau/L.life);txt('LIFE SUPPORT',28,yy+4,{col:COL.muted,font:`10px ${MONO}`});
+    hx.fillStyle='rgba(255,255,255,0.08)';hx.fillRect(28,yy+12,pw-24,6);hx.fillStyle=f<0.2?COL.red:f<0.4?COL.amber:COL.ok;hx.fillRect(28,yy+12,(pw-24)*f,6);
+    txt(fmtN(L.life-s.tau,1)+' s left',16+pw-12,yy+4,{align:'right',col:f<0.2?COL.red:COL.muted,font:`10px ${MONO}`});}
+  // --- fuel (top right) ---
+  const fx=cssW-16-pw;panel(fx,y0,pw,112,'DRIVE');
+  const left=E.fuelLeft(s);
+  if(s.unlimited)txt('unlimited',fx+pw-12,y0+44,{align:'right',font:`14px ${MONO}`});
+  else{const frac=Math.max(0,(s.m-s.md)/(1-s.md)),pf=left/L.fuel;txt('FUEL',fx+12,y0+44,{col:COL.muted,font:`11px ${MONO}`});
+    hx.fillStyle='rgba(255,255,255,0.08)';hx.fillRect(fx+60,y0+36,pw-72,8);hx.fillStyle=left<phi?COL.red:pf<0.25?COL.amber:COL.blue;hx.fillRect(fx+60,y0+36,(pw-72)*pf,8);
+    txt(`Δφ left ${fmtN(left,2)}`,fx+12,y0+66,{font:`12px ${MONO}`});txt(`stop costs ${fmtN(phi,2)}`,fx+pw-12,y0+66,{align:'right',col:left<phi?COL.red:COL.muted,font:`11px ${MONO}`});
+    txt(`fuel mass left ${frac<0.01?(frac*100).toFixed(2):(frac*100).toFixed(1)}% (rocket eq.)`,fx+12,y0+86,{col:COL.muted,font:`10.5px ${MONO}`});}
+  const thr=s.thrust>0?(s.arrival?`ARRIVAL BURN ${Math.round(s.thrust*100)}%`:'BURN '+Math.round(s.thrust*100)+'%'):'coasting';
+  txt(thr,fx+12,y0+104,{col:s.thrust>0?COL.amber:COL.muted,font:`10.5px ${MONO}`});
+  // --- objective (top centre) ---
+  const ow=Math.min(560,cssW-2*(pw+32)),ox=(cssW-ow)/2;
+  if(ow>240){
+    const G=E.goal(s),lines=[];
+    if(G){lines.push({t:`${s.goal+1}/${L.goals.length}  ${G.text}`,c:COL.ink,f:`13px ${MONO}`});
+      if(T&&(!T.hidden||s.locked[T.id])){const d=len(sub(T.pos,s.pos)),df=len(E.shipFrame(s,T.pos));
+        lines.push({t:`${T.name}: ${fmtN(d,1)} ls away · in your frame ${fmtN(df,df<10?2:1)} ls`});
+        lines.push({t:`its light left it ${fmtT(d)} ago`});}}
+    if(L.milestones)for(const m of L.milestones)lines.push({t:(s.done[m.id]?'✓ ':'· ')+m.text,c:s.done[m.id]?COL.ok:COL.muted});
+    const oh=30+lines.length*17;panel(ox,y0,ow,oh,ui.newton?'OBJECTIVE · NEWTONIAN VIEW (not what you would see)':'OBJECTIVE');
+    lines.forEach((l,i)=>txt(l.t,ox+12,y0+40+i*17,{font:l.f||`11.5px ${MONO}`,col:l.c||COL.muted}));
+    ui.objBottom=y0+oh;
+  }else ui.objBottom=y0+120;
+  // --- speed dial (bottom centre) ---
+  const R=narrow?66:80,cx=cssW/2,cy=cssH-16-(R+26)*0.6,a0=Math.PI*0.8,a1=Math.PI*2.2,NMAX=7,u=Math.min(1,nines/NMAX),aN=a0+(a1-a0)*u;
+  hx.fillStyle='rgba(10,13,30,0.55)';hx.beginPath();hx.arc(cx,cy,R+18,Math.PI*0.75,Math.PI*2.25);hx.closePath();hx.fill();
+  hx.lineCap='butt';
+  for(let i=0;i<70;i++){const t0=i/70,t1=(i+1)/70;hx.strokeStyle=t1<=u?dialColor(t0):'rgba(140,150,200,0.18)';hx.lineWidth=t1<=u?7:5;hx.beginPath();hx.arc(cx,cy,R,a0+(a1-a0)*t0,a0+(a1-a0)*t1+0.004);hx.stroke();}
+  const lab=['0','.9c','.99c','.999c','4','5','6','7'];
+  for(let n=0;n<=NMAX;n++){const a=a0+(a1-a0)*n/NMAX;hx.strokeStyle=COL.muted;hx.lineWidth=1;hx.beginPath();hx.moveTo(cx+Math.cos(a)*(R+5),cy+Math.sin(a)*(R+5));hx.lineTo(cx+Math.cos(a)*(R+10),cy+Math.sin(a)*(R+10));hx.stroke();
+    txt(lab[n],cx+Math.cos(a)*(R+20),cy+Math.sin(a)*(R+20)+4,{align:'center',col:COL.muted,font:`10px ${MONO}`});}
+  hx.strokeStyle=dialColor(u);hx.lineWidth=2;hx.beginPath();hx.moveTo(cx+Math.cos(aN)*(R-16),cy+Math.sin(aN)*(R-16));hx.lineTo(cx+Math.cos(aN)*(R+8),cy+Math.sin(aN)*(R+8));hx.stroke();
+  txt(fmtBeta(s.w)+' c',cx,cy-6,{align:'center',font:`${narrow?14:17}px ${MONO}`,col:dialColor(u)});
+  txt(`γ ${g<1000?fmtN(g,g<10?3:1):fmtN(g,0)}   φ ${fmtN(phi,2)}`,cx,cy+12,{align:'center',col:COL.ink,font:`11px ${MONO}`});
+  txt(`${fmtN(Math.max(0,nines),2)} nines of c`,cx,cy+28,{align:'center',col:COL.muted,font:`10px ${MONO}`});
+  // --- Doppler / aberration readout (bottom right) ---
+  if(!narrow||!ui.mink){
+    const dw=pw,dh=118,dx=cssW-16-dw,dy=cssH-16-dh;panel(dx,dy,dw,dh,ui.newton?'NEWTONIAN VIEW':'WHAT YOU SEE');
+    const Dah=Math.exp(phi),side=Math.acos(Math.min(1,beta))*180/Math.PI;
+    if(ui.newton){txt('no Doppler, no aberration,',dx+12,dy+40,{col:COL.amber,font:`11px ${MONO}`});txt('instant light. Press V.',dx+12,dy+58,{col:COL.amber,font:`11px ${MONO}`});}
+    else{
+      txt('Doppler ahead',dx+12,dy+40,{col:COL.muted,font:`11px ${MONO}`});txt('×'+fmtN(Dah,Dah<10?2:0),dx+dw-12,dy+40,{align:'right',col:COL.blue,font:`12px ${MONO}`});
+      txt('Doppler behind',dx+12,dy+58,{col:COL.muted,font:`11px ${MONO}`});txt('÷'+fmtN(Dah,Dah<10?2:0),dx+dw-12,dy+58,{align:'right',col:COL.red,font:`12px ${MONO}`});
+      txt('stars at 90° appear at',dx+12,dy+76,{col:COL.muted,font:`11px ${MONO}`});txt(fmtN(side,side<10?2:1)+'°',dx+dw-12,dy+76,{align:'right',font:`12px ${MONO}`});
+      txt('sky ahead brighter',dx+12,dy+94,{col:COL.muted,font:`11px ${MONO}`});const b4=Dah**4;txt('×'+(b4<1e5?fmtN(b4,b4<10?1:0):b4.toExponential(1)),dx+dw-12,dy+94,{align:'right',font:`12px ${MONO}`});
+    }
+    txt(`exposure ${ui.expLock?'LOCKED (X)':'auto'} · fov ${ui.fov>=10?Math.round(ui.fov):ui.fov>=0.1?ui.fov.toFixed(2):ui.fov.toFixed(3)}°${ui.fov<70?' · Z to unzoom':''}`,dx+12,dy+dh-8,{col:COL.muted,font:`10px ${MONO}`});
+  }
+  // --- controls strip and Minkowski diagram (bottom left) ---
+  const stripH=drawControls(16,cssH-16,narrow);
+  if(ui.mink)drawMink(s,16,cssH-16-stripH-8-230,narrow?240:290,230);
+  // --- coach and approach bar (above the dial) ---
+  let cyB=cy-R-42;
+  const bar=approach(s),tip=coach(s,cam);ui.brakeZone=!!(tip&&tip.zone);
+  // In the brake zone without braking, the bar wobbles harder the closer you are to too late (or pulses, for reduced motion).
+  let nudge=0;
+  if(bar&&tip&&tip.zone&&!braking()&&!bar.past)nudge=Math.min(1,Math.max(0.15,(bar.sd/bar.d-0.8)/0.4));
+  if(bar){const t=performance.now()/1000,dx=nudge&&!REDUCED_MOTION?(3+6*nudge)*Math.sin(t*34)*(0.6+0.4*Math.sin(t*7)):0;
+    drawApproach(bar,cssW/2+dx,cyB-14,Math.min(440,cssW-2*(pw+40)),REDUCED_MOTION?nudge*(0.5+0.5*Math.sin(t*9)):0);cyB-=48;}
+  if(tip)drawCoach(tip,cssW/2,cyB-10);
+  // --- captions (physics notes, under the objective) ---
+  if(ui.cap){const a=Math.min(1,ui.capT/0.4,(ui.capDur-ui.capT)/0.8);if(a>0){hx.globalAlpha=a;
+    const t=typeof ui.cap==='function'?ui.cap(s):ui.cap;hx.font=`14px ${'"IBM Plex Sans",system-ui,sans-serif'}`;const tw=Math.min(cssW-40,hx.measureText(t).width+32);
+    const ty=ui.objBottom+34;panel(cssW/2-tw/2,ty-22,tw,36);txt(t,cssW/2,ty+1,{align:'center',font:`14px "IBM Plex Sans",system-ui,sans-serif`});hx.globalAlpha=1;}}
+  if(ui.toast&&ui.toastT>0){hx.globalAlpha=Math.min(1,ui.toastT);txt(ui.toast,cssW/2,cssH/2-40,{align:'center',col:COL.ok,font:`13px ${MONO}`});hx.globalAlpha=1;}
+}
+
+// Text with [K] tokens drawn as key caps. With o.measure it only returns the width.
+function rich(text,x,y,o){
+  o=o||{};const font=o.font||`13px ${MONO}`,kfont=`${o.kfont||11}px ${MONO}`,parts=text.split(/(\[[^\]]+\])/).filter(Boolean);
+  const wOf=p=>{if(p[0]==='['){hx.font=kfont;return hx.measureText(p.slice(1,-1)).width+12;}hx.font=font;return hx.measureText(p).width;};
+  const total=parts.reduce((a,p)=>a+wOf(p),0);if(o.measure)return total;
+  let cx=o.align==='center'?x-total/2:x;
+  for(const p of parts){const w=wOf(p);
+    if(p[0]==='['){hx.fillStyle='rgba(232,234,247,0.12)';hx.strokeStyle='rgba(232,234,247,0.55)';hx.lineWidth=1;hx.beginPath();hx.roundRect(cx+1,y-12,w-2,17,3);hx.fill();hx.stroke();
+      txt(p.slice(1,-1),cx+w/2,y+1,{align:'center',font:kfont,col:COL.ink});}
+    else txt(p,cx,y,{font,col:o.col||COL.ink});
+    cx+=w;}
+  return total;
+}
+function drawControls(x,yb,narrow){
+  const rows=narrow?['[W] thrust [S] brake [Space] reverse [T] target','[V] Newton [M] diagram [Z] zoom [Esc] pause']
+    :['[W] thrust   [S] brake   [Space] reverse   [T] face target   [Mouse] look','[V] Newton view   [M] spacetime   [Z] starbow zoom   [X] exposure   [H] hide HUD   [Esc] pause'];
+  const w=Math.max(...rows.map(r=>rich(r,0,0,{font:`11px ${MONO}`,kfont:10,measure:true})))+20,h=rows.length*22+10;
+  panel(x,yb-h,w,h);rows.forEach((r,i)=>rich(r,x+10,yb-h+21+i*22,{font:`11px ${MONO}`,kfont:10,col:COL.muted}));
+  return h;
+}
+// What to do next, worked out from the flight state. Keys in [brackets] are drawn as key caps.
+function coach(s,cam){
+  const L=s.L,G=E.goal(s),T=E.target(s),wl=len(s.w),beta=E.betaOf(s.w),isBraking=braking();
+  if(!G)return L.milestones?{text:'Free flight: [W] thrust, [S] brake, [Z] zoom on the starbow. Chase the milestones up top.'}:null;
+  if(G.type==='lock'){
+    const bv=E.beaconView(s,E.beacon(s,G.target),false);
+    if(bv.visible&&dot(bv.n,cam.f)>Math.cos(6*Math.PI/180))return {text:'Echo is in your sights: press [L] to lock on.',tone:'go'};
+    if(bv.visible)return {text:'Echo is visible! Turn with the [Mouse] to put it in the crosshair, then press [L].',tone:'go'};
+    if(beta>0.9)return {text:'Too fast: Echo has shifted past violet. Tap [S] to slow to about 0.75c.',tone:'warn'};
+    if(beta<0.55)return {text:'Hold [W] to fly toward the dashed circle. Echo shows up between about 0.6c and 0.9c.'};
+    if(s.thrust>0)return {text:'That is fast enough. Release [W] and look around inside the dashed circle.'};
+    return {text:'Look around inside the dashed circle ([Mouse]) for a light that was not there before.'};
+  }
+  if(!T)return null;
+  const r=sub(T.pos,s.pos),d=len(r),sd=E.stopDist(s),cosA=wl>1e-9?dot(r,s.w)/(d*wl):1,lat=d*Math.sqrt(Math.max(0,1-cosA*cosA));
+  const moving=beta>E.DOCK_BETA,name=T.name;
+  if(!moving){
+    if(d<E.DOCK_R)return {text:`Docking at ${name}…`,tone:'go'};
+    const look=dot(cam.f,norm(E.shipFrame(s,T.pos)));
+    if(look<Math.cos(8*Math.PI/180))return {text:`Press [T] to face ${name}.`};
+    return {text:`Hold [W] to fly toward ${name}.`};
+  }
+  if(cosA<0&&d>E.DOCK_R)return {text:`You flew past ${name}! Hold [S] to stop, then [T] to turn back.`,tone:'bad'};
+  if(lat>2*E.DOCK_R&&d>3*E.DOCK_R)return {text:`You are heading past ${name}, not at it. Stop with [S], face it with [T], then [W].`,tone:'warn'};
+  if(isBraking)return {text:`Braking. Keep holding [S] until you stop at ${name}.`,tone:'go',zone:true};
+  if(sd>d)return {text:`Too fast to stop in time! Hold [S] anyway, then turn back with [T].`,tone:'bad',zone:true};
+  if(sd>d*0.8)return {text:`BRAKE NOW: hold [S]. The arrival computer stops you at ${name}.`,tone:'warn',zone:true};
+  const bonus=L.milestones&&L.milestones.find(m=>m.speed&&!s.done[m.id]);
+  if(bonus&&sd<d*0.3)return {text:`Keep holding [W]: ${bonus.text.replace('Bonus: ','')} (bonus).`};
+  if(s.thrust>0&&sd>d*0.35)return {text:'That is plenty of speed. Release [W] and coast.',tone:'warn'};
+  if(s.thrust>0)return {text:'Hold [W] to go faster, or let go to coast. Brake when the marker reaches the amber zone.'};
+  return {text:`Coasting toward ${name}. Hold [S] when the marker reaches the amber zone.`};
+}
+function drawCoach(tip,x,y){
+  const col=tip.tone==='bad'?COL.red:tip.tone==='warn'?COL.amber:tip.tone==='go'?COL.ok:COL.ink;
+  const font=`15px "IBM Plex Sans",system-ui,sans-serif`,w=rich(tip.text,0,0,{font,kfont:12,measure:true})+36;
+  hx.fillStyle='rgba(10,13,30,0.78)';hx.strokeStyle=col;hx.lineWidth=1.2;hx.beginPath();hx.roundRect(x-w/2,y-20,w,34,6);hx.fill();hx.stroke();
+  rich(tip.text,x,y+2,{font,kfont:12,align:'center',col});
+}
+// The approach bar: you on the left, the target on the right, and an amber zone as long as your stopping distance.
+// The leg's starting distance sets the scale, so the marker moves steadily toward the flag.
+function approach(s){
+  const G=E.goal(s),T=E.target(s);if(!G||G.type!=='dock'||!T)return null;
+  const r=sub(T.pos,s.pos),d=len(r),wl=len(s.w);
+  if(!ui.leg||ui.leg.goal!==s.goal)ui.leg={goal:s.goal,d0:Math.max(d,1)};
+  ui.leg.d0=Math.max(ui.leg.d0,d);
+  const past=wl>1e-9&&dot(r,s.w)<0&&d>E.DOCK_R;
+  return {d,d0:ui.leg.d0,sd:E.stopDist(s),past,name:T.name};
+}
+const REDUCED_MOTION=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function drawApproach(b,cx,y,w,glow){
+  const x0=cx-w/2,x1=cx+w/2,k=w/b.d0,zone=Math.min(w,b.sd*k),late=b.sd>b.d;
+  panel(x0-14,y-22,w+28,44);
+  if(glow>0){hx.strokeStyle=`rgba(245,177,76,${(0.3+0.7*glow).toFixed(2)})`;hx.lineWidth=2;hx.beginPath();hx.roundRect(x0-15,y-23,w+30,46,7);hx.stroke();}
+  hx.fillStyle='rgba(140,150,200,0.25)';hx.fillRect(x0,y-2,w,4);
+  hx.fillStyle=late?'rgba(255,93,79,0.55)':'rgba(245,177,76,0.5)';hx.fillRect(x1-zone,y-5,zone,10);
+  hx.fillStyle=COL.blue;hx.fillRect(x1-2,y-12,3,24);txt('◆',x1,y-14,{align:'center',col:COL.blue,font:`11px ${MONO}`});
+  const sx=b.past?x1+Math.min(12,6+b.d*k):x1-Math.min(w,b.d*k);
+  hx.fillStyle=b.past?COL.red:COL.ink;hx.beginPath();hx.moveTo(sx+6,y);hx.lineTo(sx-5,y-6);hx.lineTo(sx-5,y+6);hx.closePath();hx.fill();
+  txt(b.past?`PAST ${b.name}`:`${fmtN(b.d,b.d<10?1:0)} ls to ${b.name}`,x0,y+17,{col:b.past?COL.red:COL.muted,font:`10.5px ${MONO}`});
+  txt(`stopping distance ${fmtN(b.sd,b.sd<10?1:0)} ls`,x1,y+17,{align:'right',col:late?COL.red:COL.amber,font:`10.5px ${MONO}`});
+}
+
+function drawMink(s,x,y,w,h){
+  panel(x,y,w,h,'SPACETIME · x along route, t up');
+  const L=s.L,ax=L.axis,X0=x+10,Y0=y+28,PW=w-20,PH=h-44;
+  const cur={t:s.t,x:dot(s.pos,ax)},pts=s.hist.concat([cur]);
+  const bxs=L.beacons.filter(b=>!b.hidden||s.locked[b.id]).map(b=>dot(b.pos,ax));
+  let xmin=Math.min(...pts.map(p=>p.x),...bxs),xmax=Math.max(...pts.map(p=>p.x),...bxs),tmax=Math.max(cur.t*1.08,10);
+  const span=Math.max(xmax-xmin,1),k=Math.min(PW/span,PH/tmax);    // same scale on both axes so light moves at 45 degrees
+  const xc=(xmin+xmax)/2,sx=v=>X0+PW/2+(v-xc)*k,sy=t=>Y0+PH-t*k;
+  hx.save();hx.beginPath();hx.rect(X0,Y0,PW,PH);hx.clip();
+  hx.strokeStyle='rgba(140,150,200,0.25)';hx.setLineDash([3,4]);
+  L.beacons.forEach((b,i)=>{if(b.hidden&&!s.locked[b.id])return;const bx=sx(dot(b.pos,ax));hx.beginPath();hx.moveTo(bx,Y0);hx.lineTo(bx,Y0+PH);hx.stroke();});
+  hx.setLineDash([]);
+  // light cone of "now"
+  const cx=sx(cur.x),cy=sy(cur.t),big=PW+PH;
+  hx.fillStyle='rgba(245,177,76,0.07)';hx.beginPath();hx.moveTo(cx,cy);hx.lineTo(cx-big,cy-big);hx.lineTo(cx+big,cy-big);hx.closePath();hx.fill();
+  hx.strokeStyle='rgba(245,177,76,0.55)';hx.beginPath();hx.moveTo(cx-big,cy-big);hx.lineTo(cx,cy);hx.lineTo(cx+big,cy-big);hx.moveTo(cx-big,cy+big);hx.lineTo(cx,cy);hx.lineTo(cx+big,cy+big);hx.stroke();
+  // your line of simultaneity: events you'd call "now" (t - t0 = beta_x (x - x0))
+  const bx=dot(s.w,ax)/E.gam(s.w);hx.strokeStyle='rgba(95,180,255,0.5)';hx.setLineDash([6,4]);hx.beginPath();hx.moveTo(cx-big,cy+bx*big);hx.lineTo(cx+big,cy-bx*big);hx.stroke();hx.setLineDash([]);
+  // the twin at home (a straight worldline)
+  if(L.twin){hx.strokeStyle=COL.amber;hx.lineWidth=1.5;const hxp=sx(0);hx.beginPath();hx.moveTo(hxp,sy(0));hx.lineTo(hxp,sy(cur.t));hx.stroke();}
+  // your worldline, with a dot every 5 s of your own time
+  hx.strokeStyle=COL.blue;hx.lineWidth=2;hx.beginPath();pts.forEach((p,i)=>i?hx.lineTo(sx(p.x),sy(p.t)):hx.moveTo(sx(p.x),sy(p.t)));hx.stroke();
+  hx.fillStyle=COL.ink;let next=5;for(const p of pts){if(p.tau>=next){hx.beginPath();hx.arc(sx(p.x),sy(p.t),2,0,7);hx.fill();next+=5;}}
+  hx.fillStyle=COL.blue;hx.beginPath();hx.arc(cx,cy,3.5,0,7);hx.fill();
+  hx.restore();
+  txt('— you  · = 5 s of your time',x+12,y+h-8,{col:COL.blue,font:`10px ${MONO}`});
+  txt(L.twin?'— twin':'╱ light',x+w-12,y+h-8,{col:COL.amber,align:'right',font:`10px ${MONO}`});
+}
+
+// ---------- Input ----------
+addEventListener('keydown',e=>{
+  if(e.code==='Escape'){if(ui.screen==='play')pause();else if(ui.screen==='pause')resume();return;}
+  if(ui.screen!=='play')return;
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
+  if(e.repeat)return;ui.keys.add(e.code);
+  const s=ui.s;
+  if(e.code==='KeyV'){ui.newton=!ui.newton;ui.toggledV=true;toast(ui.newton?'Newtonian view: no relativity (not what you would see)':'Relativistic view: what you actually see');}
+  if(e.code==='KeyM'){ui.mink=!ui.mink;}
+  if(e.code==='KeyX'){ui.expLock=!ui.expLock;toast(ui.expLock?'Exposure locked: brightness changes are now raw':'Exposure: auto');}
+  if(e.code==='KeyH'){ui.hide=!ui.hide;}
+  if(e.code==='KeyT'){const T=E.target(s);if(T&&(!T.hidden||s.locked[T.id]))ui.turn={kind:'target'};}
+  if(e.code==='KeyF'&&len(s.w)>1e-6)ui.turn={kind:'pro'};
+  if(e.code==='KeyR')ui.turn={kind:'back'};
+  if(e.code==='KeyZ'){ // starbow zoom: face forward and narrow the view to fit the cone the sky is squeezed into
+    if(ui.fov<70||len(s.w)<1e-6){ui.zoomTo=75;}else{ui.turn={kind:'pro'};ui.zoomTo='bow';}}
+  if(e.code==='KeyL'){const ok=['echo'].some(id=>E.beacon(s,id)&&E.tryLock(s,camBasis().f,id));if(!ok&&s.L.id==='invisible-light'&&!s.locked.echo)toast('Nothing to lock on to there.');}
+});
+addEventListener('keyup',e=>ui.keys.delete(e.code));
+addEventListener('blur',()=>ui.keys.clear());
+let drag=null;
+glc.addEventListener('mousedown',e=>{if(ui.screen!=='play')return;if(glc.requestPointerLock&&!document.pointerLockElement){try{const p=glc.requestPointerLock();if(p&&p.catch)p.catch(()=>{});}catch(err){}}drag={x:e.clientX,y:e.clientY};});
+addEventListener('mouseup',()=>drag=null);
+addEventListener('mousemove',e=>{
+  if(ui.screen!=='play')return;
+  let dx=0,dy=0;if(document.pointerLockElement===glc){dx=e.movementX;dy=e.movementY;}else if(drag){dx=e.clientX-drag.x;dy=e.clientY-drag.y;drag={x:e.clientX,y:e.clientY};}else return;
+  const k=0.0022*ui.fov/75;ui.q=qnorm(qmul(ui.q,qmul(qaxis([0,1,0],-dx*k),qaxis([1,0,0],-dy*k))));ui.turn=null;
+});
+document.addEventListener('pointerlockchange',()=>{document.body.classList.toggle('locked',document.pointerLockElement===glc);if(!document.pointerLockElement&&ui.screen==='play'&&ui.wantPauseOnUnlock)pause();});
+glc.addEventListener('wheel',e=>{if(ui.screen!=='play')return;e.preventDefault();ui.fov=Math.max(0.01,Math.min(120,ui.fov*Math.exp(e.deltaY*0.001)));ui.zoomTo=null;},{passive:false});
+
+function toast(t){ui.toast=t;ui.toastT=2.5;}
+const BRAKE_KEYS=['KeyS','KeyB'];   // S sits under W; B still works for anyone used to it
+const braking=()=>BRAKE_KEYS.some(k=>ui.keys.has(k));
+function controls(dt){
+  const K=c=>ui.keys.has(c),s=ui.s,rate=1.3*dt*ui.fov/75;
+  let yaw=(K('ArrowLeft')?1:0)-(K('ArrowRight')?1:0),pitch=(K('ArrowUp')?1:0)-(K('ArrowDown')?1:0),roll=(K('KeyQ')?1:0)-(K('KeyE')?1:0);
+  if(yaw||pitch||roll){ui.turn=null;ui.q=qnorm(qmul(ui.q,qmul(qmul(qaxis([0,1,0],yaw*rate),qaxis([1,0,0],pitch*rate)),qaxis([0,0,1],roll*dt*1.5))));}
+  if(ui.turn){ // auto-turn toward a ship-frame direction
+    let want=null;const wl=len(s.w);
+    if(ui.turn.kind==='target'){const T=E.target(s);if(T)want=norm(E.shipFrame(s,T.pos));}
+    else if(ui.turn.kind==='pro'&&wl>1e-6)want=mul(s.w,1/wl);
+    else if(ui.turn.kind==='back'){if(!ui.turn.want)ui.turn.want=mul(camBasis().f,-1);want=ui.turn.want;}
+    if(want){const f=camBasis().f,c=Math.max(-1,Math.min(1,dot(f,want))),ang=Math.acos(c);
+      if(ang<0.002){if(ui.turn.kind==='back')ui.turn=null;}
+      else{let axis=cross(f,want);if(len(axis)<1e-6)axis=camBasis().u;ui.q=qnorm(qmul(qaxis(axis,Math.min(ang,Math.max(0.6,ang*4)*dt)),ui.q));}}
+  }
+  if(ui.zoomTo!=null){ // ease the field of view toward its target (in log space, so big zooms take the same time)
+    const want=ui.zoomTo==='bow'?Math.max(0.01,Math.min(75,8*Math.acos(Math.min(1,E.betaOf(s.w)))*180/Math.PI)):ui.zoomTo;
+    ui.fov=Math.exp(Math.log(ui.fov)+(Math.log(want)-Math.log(ui.fov))*Math.min(1,dt*3));}
+  const f=camBasis().f;
+  const dir=(K('KeyW')?1:0)-(K('Space')?1:0);   // Space is reverse thrust; W and Space together cancel
+  return {thrust:dir?mul(f,dir):null,brake:braking(),fine:K('ShiftLeft')||K('ShiftRight')};
+}
+
+// ---------- Screens ----------
+const panels={menu:$('tmenu'),missions:$('pMissions'),info:$('pInfo'),controls:$('pControls')};
+function showPanel(k){for(const [n,el] of Object.entries(panels))el.hidden=n!==k;if(k==='missions')fillMissions();}
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showPanel(b.dataset.go)));
+function fillMissions(){
+  const el=$('missionList');el.innerHTML='';
+  E.LEVELS.forEach((L,i)=>{const best=store.get('best:'+L.id),b=document.createElement('button');b.className='mission';
+    b.innerHTML=`<b>${i+1}. ${L.name}</b><span>${TEXT[L.id].blurb}</span><i>${L.par?(best?'★'.repeat(best.r)+'☆'.repeat(3-best.r):'☆☆☆'):''}</i>`;
+    b.addEventListener('click',()=>brief(i));el.appendChild(b);});
+}
+function setScreen(k){ui.screen=k;$('title').hidden=k!=='title';$('brief').hidden=k!=='brief';$('pause').hidden=k!=='pause';$('debrief').hidden=k!=='debrief';
+  if(k!=='play'&&document.pointerLockElement){ui.wantPauseOnUnlock=false;document.exitPointerLock();}}
+function brief(i){
+  ui.li=i;startSim();setScreen('brief');const L=E.LEVELS[i];
+  $('briefName').textContent=`${i+1}. ${L.name}`;$('briefText').innerHTML=TEXT[L.id].brief;
+  const rows=[];if(L.life)rows.push(['life support',L.life+' s of ship time']);rows.push(['fuel',L.fuel==null?'unlimited':`Δφ = ${L.fuel} (mass ratio ${fmtN(Math.exp(L.fuel),0)} : 1)`]);
+  if(L.par)rows.push(['★★★ under',fmtT(L.par[0])+' ship time']);
+  $('briefStats').innerHTML=rows.map(r=>`<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('');
+}
+function startSim(){
+  ui.s=E.makeSim(ui.li);ui.q=[0,0,0,1];ui.newton=false;ui.turn=null;ui.capShown=new Set();ui.cap=null;ui.gate=false;ui.brakeZone=false;ui.mHint=false;ui.dHint=false;
+  ui.mink=!!E.LEVELS[ui.li].twin;ui.leg=null;ui.fov=75;ui.zoomTo=null;ui.logExp=REST_EXP;ui.expLock=false;ui.toast=null;
+  const T=E.target(ui.s);if(T&&!T.hidden){const d=norm(sub(T.pos,ui.s.pos));if(Math.abs(d[2]+1)>1e-6){const ax=cross([0,0,-1],d);ui.q=qaxis(len(ax)>1e-9?ax:[0,1,0],Math.acos(Math.max(-1,Math.min(1,-d[2]))));}}
+}
+// Flying drops focus from the menu buttons, so Space (a brake key) can't re-press one.
+function launch(){setScreen('play');ui.wantPauseOnUnlock=true;if(document.activeElement)document.activeElement.blur();}
+function pause(){setScreen('pause');}
+function resume(){setScreen('play');ui.wantPauseOnUnlock=true;if(document.activeElement)document.activeElement.blur();}
+function debrief(){
+  const s=ui.s,L=s.L,won=s.status==='won';setScreen('debrief');
+  $('dbHead').textContent=won?'Mission complete':'Mission failed';$('dbHead').className='big '+(won?'won':'lost');
+  $('dbWhy').textContent=won?'':s.reason;
+  const r=E.rating(s);$('dbRating').textContent=L.par&&won?'★'.repeat(r)+'☆'.repeat(3-r):'';
+  if(won&&L.par){const best=store.get('best:'+L.id);if(!best||r>best.r||(r===best.r&&s.tau<best.tau))store.set('best:'+L.id,{r,tau:s.tau});}
+  const rows=[['your time (ship)',fmtT(s.tau)],['universe time',fmtT(s.t)],['ratio',`×${fmtN(s.t/Math.max(s.tau,1e-9),1)}`],['top speed',`${fmtBeta(E.mul([0,0,1],Math.sqrt(s.maxGamma**2-1)))} c (γ ${fmtN(s.maxGamma,1)})`],['rapidity burned',fmtN(s.fuelUsed,2)]];
+  $('dbStats').innerHTML=rows.map(x=>`<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join('');
+  $('dbPhys').innerHTML=won?TEXT[L.id].phys(s):'';
+  $('dbNext').hidden=!(won&&ui.li<E.LEVELS.length-1);
+}
+document.querySelectorAll('[data-act]').forEach(b=>b.addEventListener('click',()=>{
+  const a=b.dataset.act;
+  if(a==='launch')launch();else if(a==='resume')resume();
+  else if(a==='restart'){startSim();launch();}
+  else if(a==='next')brief(ui.li+1);
+  else if(a==='missions'){setScreen('title');showPanel('missions');}
+  else if(a==='title'){setScreen('title');showPanel('menu');}
+}));
+
+// Captions: each fires once and shows for a few seconds, one at a time. A newer one cuts in once the current one
+// has been readable for a while, so they keep up with the flight instead of queueing. Shared ones apply to every mission.
+const SHARED_CAPS=[
+  {when:(s,u)=>u.lookBack,text:'Behind you the universe has redshifted into infrared and gone dark. It is still there: press V.'},
+];
+function captions(s,dt){
+  const list=TEXT[s.L.id].captions.concat(SHARED_CAPS);
+  if(ui.cap){ui.capT+=dt;if(ui.capT>=ui.capDur)ui.cap=null;}
+  if(!ui.cap||ui.capT>3)for(let i=0;i<list.length;i++){if(ui.capShown.has(i))continue;if(list[i].when(s,ui)){ui.capShown.add(i);ui.cap=list[i].text;ui.capT=0;ui.capDur=5.5;break;}}
+}
+
+// ---------- Main loop ----------
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(0.1,(now-last)/1000);last=now;
+  if(ui.screen==='play'){
+    const s=ui.s,inp=controls(dt);
+    E.step(s,inp,dt);
+    for(const ev of s.events){
+      if(ev.type==='gate')ui.gate=ev.beta>0.9;
+      if(ev.type==='goal'&&s.status==='fly')toast('✓ '+ev.text);
+      if(ev.type==='milestone')toast('✓ '+ev.text);
+      if(ev.type==='lock')toast('Locked on to Beacon Echo');
+    }
+    s.events.length=0;
+    if(s.L.twin&&s.tau>12)ui.mHint=!ui.mink;
+    if(s.L.id==='invisible-light'&&E.betaOf(s.w)>0.3)ui.dHint=true;
+    ui.lookBack=!ui.newton&&E.gam(s.w)>5&&dot(camBasis().f,s.w)<-0.5*len(s.w);
+    captions(s,dt);if(ui.toastT>0)ui.toastT-=dt;
+    if(s.status!=='fly'){render(s,ui.newton);drawHUD(s,camBasis());setTimeout(debrief,600);ui.screen='ending';}
+  }
+  if(ui.screen==='title'||ui.screen==='brief'&&!ui.s){ // almost static: a slow drift through a starbow at 0.86c
+    ui.titleT+=dt;ui.q=qaxis([0.15,1,0],Math.sin(ui.titleT*0.03)*0.6);ui.logExp+=(meterExposure(titleSim,camBasis(),false)-ui.logExp)*0.05;
+    render(titleSim,false);hx.setTransform(1,0,0,1,0,0);hx.clearRect(0,0,hud.width,hud.height);
+  }else if(ui.s&&ui.screen!=='ending'){
+    const s=ui.s,cam=camBasis();
+    if(!ui.expLock){const t=meterExposure(s,cam,ui.newton);ui.logExp+=(t-ui.logExp)*(1-Math.exp(-dt*(ui.screen==='play'?3:20)));}
+    render(s,ui.newton);drawHUD(s,cam);
+  }
+  requestAnimationFrame(frame);
+}
+showPanel('menu');requestAnimationFrame(frame);
+if(/[?&]debug\b/.test(location.search))window.PT={ui,E,render,drawHUD,camBasis,gl};   // for driving test flights from the console
+})();
+</script>
+</body>
+</html>

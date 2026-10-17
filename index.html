@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relativity Games</title>
+<meta name="description" content="Small browser games about special and general relativity, with the physics computed for real.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Landing page for the games. Same deep-space palette as the games and the sibling collections. */
+:root{
+  --void:#05060d; --panel:#0d1124; --grid:#1b2145; --wall:#2a3166;
+  --ink:#e8eaf7; --muted:#8a90b8; --blue:#5fb4ff; --red:#ff5d4f;
+  --display:'Michroma','Eurostile','Bank Gothic',system-ui,sans-serif;
+  --body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--void);color:var(--ink)}
+body{margin:0;font-family:var(--body);font-size:16px;line-height:1.55;padding-block:48px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1000px;margin:0 auto;display:grid;gap:36px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(24px,4.4vw,40px);letter-spacing:.08em;margin:0}
+.lede{color:var(--muted);max-width:60ch;margin:12px 0 0}
+.games{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}
+.game{display:grid;grid-template-rows:auto 1fr;border:1px solid var(--grid);border-radius:6px;background:var(--panel);overflow:hidden;color:inherit;text-decoration:none;transition:border-color .2s}
+.game:hover,.game:focus-visible{border-color:var(--blue)}
+.game:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.game img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-bottom:1px solid var(--grid)}
+.body{padding:18px;display:grid;gap:8px;align-content:start}
+.tag{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h2{font-family:var(--display);font-weight:400;font-size:18px;letter-spacing:.06em;margin:0}
+.body p{margin:0;color:var(--muted);font-size:15px}
+.play{font-family:var(--mono);font-size:13px;color:var(--blue);margin-top:4px}
+footer{font-family:var(--mono);font-size:12.5px;color:var(--muted);border-top:1px solid var(--grid);padding-top:18px}
+@media (prefers-reduced-motion:reduce){.game{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RELATIVITY GAMES</h1>
+    <p class="lede">Small browser games about special and general relativity: time dilation, Doppler shifts, aberration, the twin paradox, and eventually black holes. The physics is computed for real, and each game's Info screen says what was tuned to make it playable.</p>
+  </header>
+
+  <main class="games">
+    <a class="game" href="proper-time/">
+      <img src="proper-time/screenshots/starbow.jpg" alt="Proper Time: at 0.994c the whole sky crowds into a blue starbow ahead of the ship" width="1568" height="765">
+      <div class="body">
+        <div class="tag">Flight &middot; 4 missions &middot; prototype</div>
+        <h2>Proper Time</h2>
+        <p>Pilot a courier at 0.9999c from the cockpit. Watch the sky squeeze into a starbow, beacons shift out of sight, and your twin age an hour while you age a minute. Keyboard and mouse.</p>
+        <div class="play">Play &rarr;</div>
+      </div>
+    </a>
+  </main>
+
+  <footer>Single-file HTML prototypes, no install.</footer>
+</div>
+</body>
+</html>
