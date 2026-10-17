@@ -34,6 +34,16 @@ h2{font-family:var(--display);font-weight:400;font-size:18px;letter-spacing:.06e
 .body p{margin:0;color:var(--muted);font-size:15px}
 .play{font-family:var(--mono);font-size:13px;color:var(--blue);margin-top:4px}
 footer{font-family:var(--mono);font-size:12.5px;color:var(--muted);border-top:1px solid var(--grid);padding-top:18px}
+footer a{color:var(--blue)}
+section{display:grid;gap:16px}
+h3{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.08em;margin:0;color:var(--muted)}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+figure{margin:0;border:1px solid var(--grid);border-radius:6px;background:var(--panel);overflow:hidden}
+figure img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-bottom:1px solid var(--grid)}
+figcaption{padding:12px 14px;font-size:14px;color:var(--muted)}
+figcaption b{color:var(--ink);font-weight:600}
+.keys{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:14px;color:var(--muted);margin:0;padding:0;list-style:none}
+kbd{font-family:var(--mono);font-size:12px;color:var(--ink);border:1px solid var(--wall);border-bottom-width:2px;border-radius:3px;padding:1px 6px}
 @media (prefers-reduced-motion:reduce){.game{transition:none}}
 </style>
 </head>
@@ -46,9 +56,9 @@ footer{font-family:var(--mono);font-size:12.5px;color:var(--muted);border-top:1p
 
   <main class="games">
     <a class="game" href="proper-time/">
-      <img src="proper-time/screenshots/starbow.jpg" alt="Proper Time: at 0.994c the whole sky crowds into a blue starbow ahead of the ship" width="1568" height="765">
+      <img src="proper-time/screenshots/halo-gate.jpg" alt="Proper Time: at 0.9985c the gate you just passed still rings the starbow ahead" width="1538" height="784">
       <div class="body">
-        <div class="tag">Flight &middot; 4 missions &middot; prototype</div>
+        <div class="tag">Cockpit flight &middot; 4 missions &middot; prototype</div>
         <h2>Proper Time</h2>
         <p>Pilot a courier at 0.9999c from the cockpit. Watch the sky squeeze into a starbow, beacons shift out of sight, and your twin age an hour while you age a minute. Keyboard and mouse.</p>
         <div class="play">Play &rarr;</div>
@@ -56,7 +66,34 @@ footer{font-family:var(--mono);font-size:12.5px;color:var(--muted);border-top:1p
     </a>
   </main>
 
-  <footer>Single-file HTML prototypes, no install.</footer>
+  <section aria-labelledby="see">
+    <h3 id="see">WHAT YOU'LL SEE IN PROPER TIME</h3>
+    <div class="shots">
+      <figure><img src="proper-time/screenshots/starbow.jpg" alt="At 0.994c the sky crowds into a blue starbow ahead" width="1538" height="784" loading="lazy">
+        <figcaption><b>The starbow.</b> At 0.994c, aberration squeezes the whole sky into a cone ahead, blueshifted and beamed. The sun upper left is actually behind you.</figcaption></figure>
+      <figure><img src="proper-time/screenshots/newtonian.jpg" alt="The same moment drawn without relativity" width="1538" height="784" loading="lazy">
+        <figcaption><b>Press V for Newton.</b> The same instant with relativity switched off: an ordinary sky. Flip back and forth in flight.</figcaption></figure>
+      <figure><img src="proper-time/screenshots/halo-gate.jpg" alt="The Halo Gate, already behind the ship, frames the view ahead" width="1538" height="784" loading="lazy">
+        <figcaption><b>Behind you, in front of you.</b> The gate you flew through a moment ago still rings the sky ahead, its lamps blueshifted.</figcaption></figure>
+      <figure><img src="proper-time/screenshots/twin-clocks.jpg" alt="Twin Clocks mission at gamma 149 with the spacetime diagram" width="1538" height="784" loading="lazy">
+        <figcaption><b>The twin paradox, flown.</b> A 4,800 light-second round trip on 70 s of air. The spacetime diagram draws your bent worldline next to your twin's straight one.</figcaption></figure>
+      <figure><img src="proper-time/screenshots/invisible-light.jpg" alt="An infrared beacon blueshifted into view inside a search cone" width="1538" height="784" loading="lazy">
+        <figcaption><b>Find the invisible.</b> An infrared beacon only shows up when you fly toward it at the right speed to Doppler-shift it into visible light.</figcaption></figure>
+      <figure><img src="proper-time/screenshots/cmb.jpg" alt="The cosmic microwave background glowing ahead at gamma 1500" width="1538" height="784" loading="lazy">
+        <figcaption><b>The Big Bang, glowing.</b> At γ = 1,500 the 2.7 K microwave background is blueshifted ×3,000 into a white-hot glow dead ahead.</figcaption></figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="keys">
+    <h3 id="keys">QUICK START</h3>
+    <ul class="keys">
+      <li><kbd>W</kbd> thrust</li><li><kbd>S</kbd> brake</li><li><kbd>Space</kbd> reverse</li><li><kbd>T</kbd> face target</li>
+      <li>Mouse: look</li><li><kbd>V</kbd> Newtonian view</li><li><kbd>M</kbd> spacetime diagram</li><li><kbd>Z</kbd> starbow zoom</li>
+    </ul>
+    <p class="lede" style="margin:0">The prompt above the speed dial always tells you what to do next. Desktop browser, keyboard and mouse.</p>
+  </section>
+
+  <footer>Single-file HTML prototypes, no install. Source and the physics write-up are on <a href="https://github.com/krishnasHub/relativity-games">GitHub</a> (see <a href="https://github.com/krishnasHub/relativity-games/tree/main/proper-time#readme">Proper Time's README</a>).</footer>
 </div>
 </body>
 </html>
